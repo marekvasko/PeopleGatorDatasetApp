@@ -1,0 +1,39 @@
+services:
+  archive:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: people-gator-archive:local
+    init: true
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    expose:
+      - "8787"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=web"
+      - "traefik.http.routers.peoplegator-dataset.rule=Host(`peoplegator-dataset.capturemyhand.com`)"
+      - "traefik.http.routers.peoplegator-dataset.entrypoints=websecure"
+      - "traefik.http.routers.peoplegator-dataset.tls=true"
+      - "traefik.http.routers.peoplegator-dataset.tls.certresolver=tlschallenge"
+      - "traefik.http.services.peoplegator-dataset.loadbalancer.server.port=8787"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8787
+      DATASET_DIR: /data
+    volumes:
+      - type: bind
+        source: ${DATASET_PATH:-./dataset}
+        target: /data
+        read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    networks:
+      - web
+
+networks:
+  web:
+    external: true
+    name: web
