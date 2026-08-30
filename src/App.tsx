@@ -9,7 +9,7 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
 import { faceImage, pageImage, queryString, scanHref, useApi } from "./api";
 import type {
@@ -793,6 +793,8 @@ function ScanDetailPage() {
   const [feedbackVersion, setFeedbackVersion] = useState(0);
   const [feedbackFace, setFeedbackFace] = useState<FaceOccurrence | null>(null);
   const [feedbackNotice, setFeedbackNotice] = useState("");
+  const didPanPage = useRef(false);
+  const suppressCanvasClickUntil = useRef(0);
   const url =
     "/api/scans/" +
     encodeURIComponent(route.library ?? "") +
@@ -806,7 +808,24 @@ function ScanDetailPage() {
   const selectedFace =
     scan.data?.faces.find((face) => face.cropName === selectedCrop) ?? null;
 
+  const clearSelectedFace = useCallback(() => {
+    if (!params.has("face")) return;
+    const next = new URLSearchParams(params);
+    next.delete("face");
+    setParams(next, { replace: true });
+  }, [params, setParams]);
+
   useEffect(() => setPageScale(1), [scan.data?.id]);
+
+  useEffect(() => {
+    if (!selectedCrop) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      clearSelectedFace();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [clearSelectedFace, selectedCrop]);
 
   function selectFace(face: FaceOccurrence) {
     const next = new URLSearchParams(params);
@@ -851,6 +870,22 @@ function ScanDetailPage() {
             panning={{ velocityDisabled: false, excluded: ["face-marker"] }}
             doubleClick={{ mode: "toggle", step: 0.9, excluded: ["face-marker"] }}
             onTransform={(_ref, state) => setPageScale(state.scale)}
+            onPanning={(_ref, event) => {
+              if (event.type !== "mousemove" && event.type !== "touchmove") return;
+              didPanPage.current = true;
+              suppressCanvasClickUntil.current = Date.now() + 300;
+            }}
+            onPanningStop={() => {
+              if (!didPanPage.current) return;
+              didPanPage.current = false;
+              suppressCanvasClickUntil.current = Date.now() + 300;
+            }}
+            onPinch={() => {
+              suppressCanvasClickUntil.current = Date.now() + 300;
+            }}
+            onPinchStop={() => {
+              suppressCanvasClickUntil.current = Date.now() + 300;
+            }}
           >
             {({ zoomIn, zoomOut, resetTransform }) => (
               <>
@@ -886,7 +921,18 @@ function ScanDetailPage() {
                     "aria-label": "Zoomable scanned document page",
                   }}
                 >
-                  <div className="page-canvas">
+                  <div
+                    className="page-canvas"
+                    onClick={() => {
+                      if (Date.now() < suppressCanvasClickUntil.current) return;
+                      clearSelectedFace();
+                    }}
+                    style={
+                      {
+                        "--annotation-inverse-scale": 1 / pageScale,
+                      } as React.CSSProperties
+                    }
+                  >
                     <img
                       src={pageImage(scan.data!.imagePath, 1800)}
                       alt={"Scanned archive page " + scan.data!.page}
@@ -913,7 +959,10 @@ function ScanDetailPage() {
                               width: width + "%",
                               height: height + "%",
                             }}
-                            onClick={() => selectFace(face)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              selectFace(face);
+                            }}
                             aria-label={
                               "Face " +
                               (index + 1) +

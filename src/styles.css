@@ -1029,6 +1029,7 @@ main {
 }
 
 .page-canvas {
+  --annotation-inverse-scale: 1;
   position: relative;
   width: fit-content;
   max-width: 100%;
@@ -1046,11 +1047,11 @@ main {
 
 .face-marker {
   position: absolute;
-  min-width: 16px;
-  min-height: 16px;
+  min-width: calc(16px * var(--annotation-inverse-scale));
+  min-height: calc(16px * var(--annotation-inverse-scale));
   padding: 0;
-  border: max(2px, 0.15vw) solid #efb44f;
-  outline: 1px solid rgba(0, 0, 0, 0.28);
+  border: calc(2px * var(--annotation-inverse-scale)) solid #efb44f;
+  outline: calc(1px * var(--annotation-inverse-scale)) solid rgba(0, 0, 0, 0.28);
   background: rgba(239, 180, 79, 0.08);
   cursor: pointer;
   line-height: 1.2;
@@ -1066,7 +1067,7 @@ main {
 .face-marker.annotated.selected {
   border-color: #ffdf7d;
   background: rgba(239, 180, 79, 0.2);
-  box-shadow: 0 0 0 2px rgba(255, 223, 125, 0.34);
+  box-shadow: 0 0 0 calc(2px * var(--annotation-inverse-scale)) rgba(255, 223, 125, 0.34);
 }
 
 .face-marker.unannotated {
@@ -1083,13 +1084,13 @@ main {
 .face-marker.unannotated.selected {
   border-color: #ff6b5e;
   background: rgba(213, 48, 40, 0.24);
-  box-shadow: 0 0 0 2px rgba(255, 107, 94, 0.38);
+  box-shadow: 0 0 0 calc(2px * var(--annotation-inverse-scale)) rgba(255, 107, 94, 0.38);
 }
 
 .marker-number {
   position: absolute;
-  top: -12px;
-  left: -12px;
+  top: 0;
+  left: 0;
   display: grid;
   width: 23px;
   height: 23px;
@@ -1099,12 +1100,14 @@ main {
   background: #ffdf7d;
   font-size: 0.65rem;
   font-weight: 900;
+  transform: scale(var(--annotation-inverse-scale)) translate(-50%, -50%);
+  transform-origin: 0 0;
 }
 
 .marker-label {
   position: absolute;
-  bottom: calc(100% + 7px);
-  left: -2px;
+  bottom: calc(100% + 7px * var(--annotation-inverse-scale));
+  left: 0;
   width: max-content;
   max-width: 180px;
   padding: 0.38rem 0.55rem;
@@ -1118,14 +1121,15 @@ main {
   white-space: nowrap;
   opacity: 0;
   pointer-events: none;
-  transform: translateY(3px);
-  transition: opacity 120ms ease, transform 120ms ease;
+  transform: scale(var(--annotation-inverse-scale)) translateY(3px);
+  transform-origin: left bottom;
+  transition: opacity 120ms ease;
 }
 
 .face-marker:hover .marker-label,
 .face-marker.selected .marker-label {
   opacity: 1;
-  transform: translateY(0);
+  transform: scale(var(--annotation-inverse-scale)) translateY(0);
 }
 
 .scan-caption {
@@ -1519,8 +1523,8 @@ main {
 
 .marker-issues {
   position: absolute;
-  top: -13px;
-  right: -13px;
+  top: 0;
+  right: 0;
   display: flex;
   align-items: center;
   gap: 0.15rem;
@@ -1533,6 +1537,8 @@ main {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
   font-size: 0.58rem;
   font-weight: 900;
+  transform: scale(var(--annotation-inverse-scale)) translate(50%, -50%);
+  transform-origin: 100% 0;
 }
 
 .marker-issues .icon {
@@ -2260,8 +2266,6 @@ footer {
   }
 
   .marker-number {
-    top: -9px;
-    left: -9px;
     width: 19px;
     height: 19px;
     font-size: 0.55rem;
