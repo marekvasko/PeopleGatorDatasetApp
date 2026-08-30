@@ -21,6 +21,7 @@ export interface FaceOccurrence {
   confidence: number | null;
   displayName: string | null;
   votes: VoteSummary[];
+  feedbackCount: number;
 }
 
 export interface ScanSummary {
@@ -31,6 +32,7 @@ export interface ScanSummary {
   imagePath: string;
   faceCount: number;
   namedFaceCount: number;
+  feedbackCount: number;
   people: string[];
 }
 
@@ -46,6 +48,7 @@ export interface PersonSummary {
   faceCount: number;
   averageAgreement: number;
   previewFacePath: string | null;
+  feedbackCount: number;
 }
 
 export interface PersonDetail extends PersonSummary {
@@ -68,10 +71,28 @@ export interface ArchiveStats {
   libraries: number;
   annotationRows: number;
   uniqueVotes: number;
+  feedbackReports: number;
 }
 
 export interface LibrarySummary {
   name: string;
   scanCount: number;
   faceCount: number;
+}
+
+export type FeedbackIssueType = "wrong_person" | "invalid_detection";
+
+export interface FeedbackSubmission {
+  issueType: FeedbackIssueType;
+  library: string;
+  document: string;
+  page: string;
+  cropName: string;
+  suggestedPersonName?: string;
+  note?: string;
+}
+
+export interface FeedbackResult {
+  feedbackId: string;
+  feedbackCount: number;
 }

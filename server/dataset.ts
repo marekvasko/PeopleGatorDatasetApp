@@ -1,10 +1,13 @@
 import { createReadStream } from "node:fs";
-import { access, readdir } from "node:fs/promises";
+import { appendFile, access, mkdir, readdir } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import readline from "node:readline";
 import type {
   ArchiveStats,
   FaceOccurrence,
+  FeedbackResult,
+  FeedbackSubmission,
   LibrarySummary,
   Paginated,
   PersonDetail,
@@ -33,6 +36,7 @@ interface MutableFace {
   sourceUrl: string | null;
   annotators: Set<string>;
   votesByName: Map<string, Set<string>>;
+  feedbackCount: number;
 }
 
 interface MutableScan {
@@ -136,9 +140,20 @@ async function readJsonLines(
   return rowCount;
 }
 
+export class FeedbackValidationError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status = 400) {
+    super(message);
+    this.name = "FeedbackValidationError";
+    this.status = status;
+  }
+}
+
 export class DatasetIndex {
   readonly datasetDir: string;
   readonly dataDir: string;
+  readonly feedbackFile: string;
   private scans = new Map<string, MutableScan>();
   private faces = new Map<string, MutableFace>();
   private people = new Map<string, MutablePerson>();
@@ -146,10 +161,13 @@ export class DatasetIndex {
   private sortedPeople: MutablePerson[] = [];
   private annotationRows = 0;
   private uniqueVotes = 0;
+  private feedbackReports = 0;
+  private feedbackWriteQueue: Promise<void> = Promise.resolve();
 
-  constructor(datasetDir: string) {
+  constructor(datasetDir: string, feedbackFile: string) {
     this.datasetDir = path.resolve(datasetDir);
     this.dataDir = path.join(this.datasetDir, "people_gator__data");
+    this.feedbackFile = path.resolve(feedbackFile);
   }
 
   async build(): Promise<void> {
@@ -220,6 +238,7 @@ export class DatasetIndex {
     );
 
     this.buildPeople();
+    await this.loadFeedback();
     this.browsableScans = [...this.scans.values()]
       .filter((scan) => scan.hasImage)
       .sort(
@@ -296,6 +315,7 @@ export class DatasetIndex {
       sourceUrl: text(record.url) || null,
       annotators: new Set(),
       votesByName: new Map(),
+      feedbackCount: 0,
     };
     this.faces.set(id, created);
     return created;
@@ -367,6 +387,7 @@ export class DatasetIndex {
       confidence: face.confidence,
       displayName: votes[0]?.name ?? null,
       votes,
+      feedbackCount: face.feedbackCount,
     };
   }
 
@@ -385,6 +406,7 @@ export class DatasetIndex {
       imagePath: scan.imagePath,
       faceCount: faces.length,
       namedFaceCount: faces.filter((face) => face.votesByName.size > 0).length,
+      feedbackCount: faces.reduce((total, face) => total + face.feedbackCount, 0),
       people,
     };
   }
@@ -407,6 +429,7 @@ export class DatasetIndex {
           ? 0
           : Math.round(percentages.reduce((sum, value) => sum + value, 0) / percentages.length),
       previewFacePath: faces.find((face) => face.facePath)?.facePath ?? null,
+      feedbackCount: faces.reduce((total, face) => total + face.feedbackCount, 0),
     };
   }
 
@@ -419,7 +442,82 @@ export class DatasetIndex {
       libraries: new Set(this.browsableScans.map((scan) => scan.library)).size,
       annotationRows: this.annotationRows,
       uniqueVotes: this.uniqueVotes,
+      feedbackReports: this.feedbackReports,
     };
+  }
+
+  private async loadFeedback(): Promise<void> {
+    await mkdir(path.dirname(this.feedbackFile), { recursive: true });
+    await appendFile(this.feedbackFile, "", { encoding: "utf8" });
+    await readJsonLines(this.feedbackFile, (record) => {
+      const id = faceId(
+        text(record.library),
+        text(record.document),
+        text(record.page),
+        text(record.crop_name),
+      );
+      const face = this.faces.get(id);
+      const issueType = text(record.issue_type);
+      if (!face || (issueType !== "wrong_person" && issueType !== "invalid_detection")) {
+        return;
+      }
+      face.feedbackCount += 1;
+      this.feedbackReports += 1;
+    });
+  }
+
+  async recordFeedback(submission: FeedbackSubmission): Promise<FeedbackResult> {
+    const library = submission.library.trim();
+    const document = submission.document.trim();
+    const page = submission.page.trim();
+    const cropName = submission.cropName.trim();
+    const face = this.faces.get(faceId(library, document, page, cropName));
+    if (!face) throw new FeedbackValidationError("Detection not found", 404);
+
+    if (submission.issueType !== "wrong_person" && submission.issueType !== "invalid_detection") {
+      throw new FeedbackValidationError("Choose a valid feedback type");
+    }
+
+    const suggestedPersonName = submission.suggestedPersonName?.trim() ?? "";
+    if (submission.issueType === "wrong_person") {
+      if (!suggestedPersonName || !this.people.has(suggestedPersonName)) {
+        throw new FeedbackValidationError("Choose a person from the archive index");
+      }
+      if (face.votesByName.has(suggestedPersonName)) {
+        throw new FeedbackValidationError("Choose a different person name");
+      }
+    }
+
+    const note = submission.note?.trim() ?? "";
+    if (note.length > 1000) {
+      throw new FeedbackValidationError("Feedback note must be at most 1,000 characters");
+    }
+
+    const feedbackId = randomUUID();
+    const record = {
+      feedback_id: feedbackId,
+      created_at: new Date().toISOString(),
+      issue_type: submission.issueType,
+      library,
+      document,
+      page,
+      crop_name: cropName,
+      face: face.facePath,
+      current_names: [...face.votesByName.keys()].sort(collator.compare),
+      ...(submission.issueType === "wrong_person"
+        ? { suggested_person_name: suggestedPersonName }
+        : {}),
+      ...(note ? { note } : {}),
+    };
+
+    const write = this.feedbackWriteQueue
+      .catch(() => undefined)
+      .then(() => appendFile(this.feedbackFile, JSON.stringify(record) + "\n", "utf8"));
+    this.feedbackWriteQueue = write;
+    await write;
+    face.feedbackCount += 1;
+    this.feedbackReports += 1;
+    return { feedbackId, feedbackCount: face.feedbackCount };
   }
 
   getLibraries(): LibrarySummary[] {

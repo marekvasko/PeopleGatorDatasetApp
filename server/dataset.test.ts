@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { normalizeSearch, summarizeVotes } from "./dataset";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { DatasetIndex, normalizeSearch, summarizeVotes } from "./dataset";
 
 describe("annotation consensus", () => {
   it("deduplicates repeated rows from the same annotator", () => {
@@ -30,5 +33,65 @@ describe("annotation consensus", () => {
 
   it("searches without requiring Czech diacritics", () => {
     expect(normalizeSearch("František Šťastný")).toBe("frantisek stastny");
+  });
+});
+
+describe("feedback persistence", () => {
+  it("appends feedback and reloads counts without changing the assigned name", async () => {
+    const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "people-gator-test-"));
+    try {
+      const dataset = path.join(temporaryRoot, "dataset");
+      const library = path.join(dataset, "people_gator__data", "demo");
+      const images = path.join(library, "document.images");
+      await mkdir(images, { recursive: true });
+      await writeFile(path.join(images, "page.jpg"), "");
+      const detections = [
+        { library: "demo", document: "document", page: "page.jpg", crop_name: "face-0.jpg" },
+        { library: "demo", document: "document", page: "page.jpg", crop_name: "face-1.jpg" },
+      ];
+      await writeFile(
+        path.join(library, "document.people_gator.jsonl"),
+        detections.map((record) => JSON.stringify(record)).join("\n") + "\n",
+      );
+      const annotations = [
+        { ...detections[0], person_name: "Current Person", annotator: "a" },
+        { ...detections[1], person_name: "Other Person", annotator: "a" },
+      ];
+      await writeFile(
+        path.join(dataset, "people_gator__corresponding_faces__test.jsonl"),
+        annotations.map((record) => JSON.stringify(record)).join("\n") + "\n",
+      );
+
+      const feedbackFile = path.join(temporaryRoot, "feedback", "feedback.jsonl");
+      const archive = new DatasetIndex(dataset, feedbackFile);
+      await archive.build();
+      const result = await archive.recordFeedback({
+        issueType: "wrong_person",
+        library: "demo",
+        document: "document",
+        page: "page.jpg",
+        cropName: "face-0.jpg",
+        suggestedPersonName: "Other Person",
+      });
+      expect(result.feedbackCount).toBe(1);
+
+      const reloaded = new DatasetIndex(dataset, feedbackFile);
+      await reloaded.build();
+      const face = reloaded.getScan("demo", "document", "page.jpg")?.faces[0];
+      expect(face?.displayName).toBe("Current Person");
+      expect(face?.feedbackCount).toBe(1);
+      const record = JSON.parse((await readFile(feedbackFile, "utf8")).trim());
+      expect(record).toMatchObject({
+        issue_type: "wrong_person",
+        library: "demo",
+        document: "document",
+        page: "page.jpg",
+        crop_name: "face-0.jpg",
+        current_names: ["Current Person"],
+        suggested_person_name: "Other Person",
+      });
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
+    }
   });
 });

@@ -4,7 +4,8 @@ import { access } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
-import { DatasetIndex } from "./dataset";
+import { DatasetIndex, FeedbackValidationError } from "./dataset";
+import type { FeedbackIssueType, FeedbackSubmission } from "../src/types";
 
 function argument(name: string): string | undefined {
   const index = process.argv.indexOf(name);
@@ -30,11 +31,16 @@ function resolveMedia(root: string, relative: string): string | null {
 const datasetDirectory = path.resolve(
   argument("--dataset") || process.env.DATASET_DIR || path.join(process.cwd(), "dataset"),
 );
+const feedbackFile = path.resolve(
+  argument("--feedback") ||
+    process.env.FEEDBACK_FILE ||
+    path.join(process.cwd(), "feedback", "people_gator__feedback.jsonl"),
+);
 const port = queryNumber(process.env.PORT, 8787);
 const host = process.env.HOST || "0.0.0.0";
 
 console.log("Indexing dataset at " + datasetDirectory + " …");
-const archive = new DatasetIndex(datasetDirectory);
+const archive = new DatasetIndex(datasetDirectory, feedbackFile);
 const startedAt = Date.now();
 await archive.build();
 console.log(
@@ -50,6 +56,7 @@ console.log(
 const app = express();
 app.disable("x-powered-by");
 app.use(compression());
+app.use(express.json({ limit: "16kb" }));
 
 const thumbnailCache = new Map<string, Promise<Buffer>>();
 const MAX_THUMBNAILS = 128;
@@ -141,6 +148,24 @@ app.get("/api/person", (request, response) => {
   response.json(person);
 });
 
+app.post("/api/feedback", async (request, response) => {
+  const body =
+    request.body && typeof request.body === "object"
+      ? (request.body as Record<string, unknown>)
+      : {};
+  const submission: FeedbackSubmission = {
+    issueType: queryText(body.issueType) as FeedbackIssueType,
+    library: queryText(body.library),
+    document: queryText(body.document),
+    page: queryText(body.page),
+    cropName: queryText(body.cropName),
+    suggestedPersonName: queryText(body.suggestedPersonName),
+    note: queryText(body.note),
+  };
+  const result = await archive.recordFeedback(submission);
+  response.status(201).json(result);
+});
+
 app.get("/media/page", async (request, response, next) => {
   try {
     const mediaPath = resolveMedia(archive.dataDir, queryText(request.query.path));
@@ -199,8 +224,12 @@ app.use(
     response: express.Response,
     _next: express.NextFunction,
   ) => {
-    console.error(error);
     if (!response.headersSent) {
+      if (error instanceof FeedbackValidationError) {
+        response.status(error.status).json({ error: error.message });
+        return;
+      }
+      console.error(error);
       response.status(500).json({ error: "Unable to process request" });
     }
   },

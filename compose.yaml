@@ -23,11 +23,15 @@ services:
       HOST: 0.0.0.0
       PORT: 8787
       DATASET_DIR: /data
+      FEEDBACK_FILE: /feedback/people_gator__feedback.jsonl
     volumes:
       - type: bind
         source: ${DATASET_PATH:-./dataset}
         target: /data
         read_only: true
+      - type: volume
+        source: feedback
+        target: /feedback
     tmpfs:
       - /tmp:size=64m,mode=1777
     networks:
@@ -37,3 +41,7 @@ networks:
   web:
     external: true
     name: web
+
+volumes:
+  feedback:
+    name: people-gator-dataset-feedback

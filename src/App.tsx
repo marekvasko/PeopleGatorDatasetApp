@@ -9,11 +9,14 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
 import { faceImage, pageImage, queryString, scanHref, useApi } from "./api";
 import type {
   ArchiveStats,
   FaceOccurrence,
+  FeedbackIssueType,
+  FeedbackResult,
   LibrarySummary,
   Paginated,
   PersonDetail,
@@ -25,7 +28,7 @@ import type {
 
 const formatNumber = new Intl.NumberFormat("en");
 
-function ArchiveIcon({ type }: { type: "scans" | "people" | "search" | "arrow" }) {
+function ArchiveIcon({ type }: { type: "scans" | "people" | "search" | "arrow" | "flag" }) {
   const paths = {
     scans: (
       <>
@@ -46,6 +49,12 @@ function ArchiveIcon({ type }: { type: "scans" | "people" | "search" | "arrow" }
       </>
     ),
     arrow: <path d="m9 18 6-6-6-6" />,
+    flag: (
+      <>
+        <path d="M6 21V4" />
+        <path d="M6 5h10l-2 3 2 3H6" />
+      </>
+    ),
   };
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className="icon">
@@ -111,7 +120,6 @@ function SearchBox({
   return (
     <label className="search-box">
       <span className="sr-only">{label}</span>
-      <ArchiveIcon type="search" />
       <input
         type="search"
         value={value}
@@ -123,6 +131,7 @@ function SearchBox({
           ×
         </button>
       )}
+      <ArchiveIcon type="search" />
     </label>
   );
 }
@@ -353,6 +362,11 @@ function ScanBrowse() {
                         {scan.namedFaceCount}/{scan.faceCount}
                       </span>
                     )}
+                    {scan.feedbackCount > 0 && (
+                      <span className="scan-card-issues">
+                        <IssueCount count={scan.feedbackCount} compact />
+                      </span>
+                    )}
                   </div>
                   <div className="scan-card-body">
                     <div className="scan-meta-line">
@@ -398,6 +412,20 @@ function AgreementBadge({ vote, compact = false }: { vote?: VoteSummary; compact
     >
       <strong>{vote.percentage}%</strong>
       {!compact && <span> agree · {vote.count}/{vote.total}</span>}
+    </span>
+  );
+}
+
+function IssueCount({ count, compact = false }: { count: number; compact?: boolean }) {
+  if (count <= 0) return null;
+  return (
+    <span
+      className={"reported-issues " + (compact ? "compact" : "")}
+      title={count + (count === 1 ? " issue reported" : " issues reported")}
+    >
+      <ArchiveIcon type="flag" />
+      <strong>{count}</strong>
+      {!compact && <span>{count === 1 ? "report" : "reports"}</span>}
     </span>
   );
 }
@@ -492,6 +520,7 @@ function PeopleBrowse() {
                       <i style={{ "--agreement": person.averageAgreement + "%" } as React.CSSProperties} />
                       {person.averageAgreement}% avg. agreement
                     </span>
+                    <IssueCount count={person.feedbackCount} />
                   </div>
                   <ArchiveIcon type="arrow" />
                 </Link>
@@ -543,20 +572,241 @@ function VotePanel({ face }: { face: FaceOccurrence }) {
   );
 }
 
+function FeedbackDialog({
+  face,
+  onClose,
+  onSubmitted,
+}: {
+  face: FaceOccurrence;
+  onClose: () => void;
+  onSubmitted: (result: FeedbackResult) => void;
+}) {
+  const [issueType, setIssueType] = useState<FeedbackIssueType>("wrong_person");
+  const [query, setQuery] = useState("");
+  const [selectedName, setSelectedName] = useState("");
+  const [note, setNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const debouncedQuery = useDebounced(query.trim(), 220);
+  const currentNames = useMemo(() => new Set(face.votes.map((vote) => vote.name)), [face]);
+  const people = useApi<Paginated<PersonSummary>>(
+    issueType === "wrong_person" && debouncedQuery.length >= 2
+      ? "/api/people" + queryString({ q: debouncedQuery, pageSize: 8 })
+      : null,
+  );
+  const suggestions =
+    people.data?.items.filter((person) => !currentNames.has(person.name)) ?? [];
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !submitting) onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [onClose, submitting]);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    if (issueType === "wrong_person" && !selectedName) {
+      setError("Search for and select the person who should be shown here.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const response = await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          issueType,
+          library: face.library,
+          document: face.document,
+          page: face.page,
+          cropName: face.cropName,
+          suggestedPersonName: issueType === "wrong_person" ? selectedName : undefined,
+          note,
+        }),
+      });
+      const body = (await response.json().catch(() => null)) as
+        | FeedbackResult
+        | { error?: string }
+        | null;
+      if (!response.ok) {
+        throw new Error(body && "error" in body ? body.error : "Could not save feedback");
+      }
+      onSubmitted(body as FeedbackResult);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not save feedback");
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="feedback-backdrop" onClick={submitting ? undefined : onClose}>
+      <section
+        className="feedback-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="feedback-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header className="feedback-dialog-header">
+          <div>
+            <span className="eyebrow">Help improve this archive</span>
+            <h2 id="feedback-title">Record feedback</h2>
+          </div>
+          <button type="button" onClick={onClose} disabled={submitting} aria-label="Close feedback dialog">
+            ×
+          </button>
+        </header>
+
+        <div className="feedback-face-context">
+          <ImageWithFallback
+            src={faceImage(face.facePath)}
+            alt={face.displayName || "Selected detection"}
+          />
+          <div>
+            <span>Feedback for</span>
+            <strong>{face.displayName || "Unnamed detection"}</strong>
+            <small>{face.library.toUpperCase()} · {face.page}</small>
+          </div>
+          <IssueCount count={face.feedbackCount} />
+        </div>
+
+        <form onSubmit={submit}>
+          <fieldset className="feedback-type-options">
+            <legend>What is wrong?</legend>
+            <label className={issueType === "wrong_person" ? "selected" : ""}>
+              <input
+                type="radio"
+                name="issueType"
+                checked={issueType === "wrong_person"}
+                onChange={() => setIssueType("wrong_person")}
+              />
+              <span>
+                <strong>Wrong person</strong>
+                <small>Suggest another person from the archive.</small>
+              </span>
+            </label>
+            <label className={issueType === "invalid_detection" ? "selected" : ""}>
+              <input
+                type="radio"
+                name="issueType"
+                checked={issueType === "invalid_detection"}
+                onChange={() => setIssueType("invalid_detection")}
+              />
+              <span>
+                <strong>Detection is wrong</strong>
+                <small>This box is not a valid face detection.</small>
+              </span>
+            </label>
+          </fieldset>
+
+          {issueType === "wrong_person" && (
+            <div className="feedback-person-picker">
+              <span className="feedback-person-label">Who should this be?</span>
+              <SearchBox
+                value={query}
+                onChange={(value) => {
+                  setQuery(value);
+                  if (value !== selectedName) setSelectedName("");
+                }}
+                label="Search for a different person"
+                placeholder="Start typing a name…"
+              />
+              {selectedName ? (
+                <div className="selected-suggestion">
+                  <span>Selected</span>
+                  <strong>{selectedName}</strong>
+                  <button type="button" onClick={() => { setSelectedName(""); setQuery(""); }}>
+                    Change
+                  </button>
+                </div>
+              ) : query.trim() ? (
+                <div className="person-suggestions" role="listbox" aria-label="Matching people">
+                  {debouncedQuery.length < 2 && <p>Type at least two characters.</p>}
+                  {people.loading && <p>Searching people…</p>}
+                  {people.error && <p>{people.error}</p>}
+                  {!people.loading && debouncedQuery.length >= 2 && suggestions.length === 0 && (
+                    <p>No different matching person found.</p>
+                  )}
+                  {suggestions.map((person) => (
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected="false"
+                      key={person.name}
+                      onClick={() => { setSelectedName(person.name); setQuery(person.name); }}
+                    >
+                      {person.previewFacePath ? (
+                        <ImageWithFallback src={faceImage(person.previewFacePath)} alt="" />
+                      ) : (
+                        <span className="image-fallback"><ArchiveIcon type="people" /></span>
+                      )}
+                      <span>
+                        <strong>{person.name}</strong>
+                        <small>{person.faceCount} appearances</small>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          <label className="feedback-note">
+            <span>Additional detail <small>optional</small></span>
+            <textarea
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              maxLength={1000}
+              rows={3}
+              placeholder="Tell us anything else that would help…"
+            />
+          </label>
+
+          {error && <p className="feedback-error" role="alert">{error}</p>}
+          <div className="feedback-actions">
+            <button type="button" onClick={onClose} disabled={submitting}>Cancel</button>
+            <button
+              type="submit"
+              disabled={submitting || (issueType === "wrong_person" && !selectedName)}
+            >
+              {submitting ? "Saving…" : "Submit feedback"}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
 function ScanDetailPage() {
   const route = useParams();
   const [params, setParams] = useSearchParams();
+  const [pageScale, setPageScale] = useState(1);
+  const [feedbackVersion, setFeedbackVersion] = useState(0);
+  const [feedbackFace, setFeedbackFace] = useState<FaceOccurrence | null>(null);
+  const [feedbackNotice, setFeedbackNotice] = useState("");
   const url =
     "/api/scans/" +
     encodeURIComponent(route.library ?? "") +
     "/" +
     encodeURIComponent(route.document ?? "") +
     "/" +
-    encodeURIComponent(route.page ?? "");
+    encodeURIComponent(route.page ?? "") +
+    queryString({ feedbackVersion });
   const scan = useApi<ScanDetail>(url);
   const selectedCrop = params.get("face");
   const selectedFace =
     scan.data?.faces.find((face) => face.cropName === selectedCrop) ?? null;
+
+  useEffect(() => setPageScale(1), [scan.data?.id]);
 
   function selectFace(face: FaceOccurrence) {
     const next = new URLSearchParams(params);
@@ -588,49 +838,111 @@ function ScanDetailPage() {
 
       <div className="scan-workspace">
         <div className="page-stage">
-          <div className="bbox-legend" aria-label="Face annotation colors">
-            <span>
-              <i className="annotated" />
-              Named · {scan.data.faces.filter((face) => face.votes.length > 0).length}
-            </span>
-            <span>
-              <i className="unannotated" />
-              No name · {scan.data.faces.filter((face) => face.votes.length === 0).length}
-            </span>
-          </div>
-          <div className="page-canvas">
-            <img
-              src={pageImage(scan.data.imagePath, 1800)}
-              alt={"Scanned archive page " + scan.data.page}
-            />
-            {scan.data.pageWidth > 0 &&
-              scan.data.pageHeight > 0 &&
-              scan.data.faces.map((face, index) => {
-                const left = (face.pageLeft / scan.data!.pageWidth) * 100;
-                const top = (face.pageTop / scan.data!.pageHeight) * 100;
-                const width = (face.width / scan.data!.pageWidth) * 100;
-                const height = (face.height / scan.data!.pageHeight) * 100;
-                return (
-                  <button
-                    type="button"
-                    className={
-                      "face-marker " +
-                      (face.votes.length > 0 ? "annotated " : "unannotated ") +
-                      (selectedFace?.id === face.id ? "selected" : "")
-                    }
-                    style={{ left: left + "%", top: top + "%", width: width + "%", height: height + "%" }}
-                    onClick={() => selectFace(face)}
-                    aria-label={
-                      "Face " + (index + 1) + ": " + (face.displayName || "unidentified")
-                    }
-                    key={face.id}
-                  >
-                    <span className="marker-number">{index + 1}</span>
-                    <span className="marker-label">{face.displayName || "No name annotation"}</span>
-                  </button>
-                );
-              })}
-          </div>
+          <TransformWrapper
+            key={scan.data.id}
+            initialScale={1}
+            minScale={1}
+            maxScale={6}
+            centerOnInit
+            centerZoomedOut
+            limitToBounds
+            wheel={{ step: 0.16 }}
+            pinch={{ step: 5, allowPanning: true }}
+            panning={{ velocityDisabled: false, excluded: ["face-marker"] }}
+            doubleClick={{ mode: "toggle", step: 0.9, excluded: ["face-marker"] }}
+            onTransform={(_ref, state) => setPageScale(state.scale)}
+          >
+            {({ zoomIn, zoomOut, resetTransform }) => (
+              <>
+                <div className="page-toolbar">
+                  <div className="bbox-legend" aria-label="Face annotation colors">
+                    <span>
+                      <i className="annotated" />
+                      Named · {scan.data!.faces.filter((face) => face.votes.length > 0).length}
+                    </span>
+                    <span>
+                      <i className="unannotated" />
+                      No name · {scan.data!.faces.filter((face) => face.votes.length === 0).length}
+                    </span>
+                  </div>
+                  <div className="zoom-controls" aria-label="Document zoom controls">
+                    <button type="button" onClick={() => zoomOut(0.4)} aria-label="Zoom out">
+                      −
+                    </button>
+                    <output aria-live="polite">{Math.round(pageScale * 100)}%</output>
+                    <button type="button" onClick={() => zoomIn(0.4)} aria-label="Zoom in">
+                      +
+                    </button>
+                    <button type="button" className="zoom-reset" onClick={() => resetTransform()}>
+                      Reset
+                    </button>
+                  </div>
+                </div>
+                <TransformComponent
+                  wrapperClass="page-zoom-viewport"
+                  contentClass="page-zoom-content"
+                  wrapperProps={{
+                    role: "region",
+                    "aria-label": "Zoomable scanned document page",
+                  }}
+                >
+                  <div className="page-canvas">
+                    <img
+                      src={pageImage(scan.data!.imagePath, 1800)}
+                      alt={"Scanned archive page " + scan.data!.page}
+                      draggable={false}
+                    />
+                    {scan.data!.pageWidth > 0 &&
+                      scan.data!.pageHeight > 0 &&
+                      scan.data!.faces.map((face, index) => {
+                        const left = (face.pageLeft / scan.data!.pageWidth) * 100;
+                        const top = (face.pageTop / scan.data!.pageHeight) * 100;
+                        const width = (face.width / scan.data!.pageWidth) * 100;
+                        const height = (face.height / scan.data!.pageHeight) * 100;
+                        return (
+                          <button
+                            type="button"
+                            className={
+                              "face-marker " +
+                              (face.votes.length > 0 ? "annotated " : "unannotated ") +
+                              (selectedFace?.id === face.id ? "selected" : "")
+                            }
+                            style={{
+                              left: left + "%",
+                              top: top + "%",
+                              width: width + "%",
+                              height: height + "%",
+                            }}
+                            onClick={() => selectFace(face)}
+                            aria-label={
+                              "Face " +
+                              (index + 1) +
+                              ": " +
+                              (face.displayName || "unidentified")
+                            }
+                            key={face.id}
+                          >
+                            <span className="marker-number">{index + 1}</span>
+                            {face.feedbackCount > 0 && (
+                              <span className="marker-issues">
+                                <ArchiveIcon type="flag" />
+                                {face.feedbackCount}
+                              </span>
+                            )}
+                            <span className="marker-label">
+                              {face.displayName || "No name annotation"}
+                            </span>
+                          </button>
+                        );
+                      })}
+                  </div>
+                </TransformComponent>
+                <p className="zoom-hint">
+                  Pinch or scroll to zoom · drag to move · double-tap to toggle zoom
+                </p>
+              </>
+            )}
+          </TransformWrapper>
           <div className="scan-caption">
             <span>
               Page <strong>{scan.data.page.replace(/\.[^.]+$/, "")}</strong>
@@ -654,9 +966,21 @@ function ScanDetailPage() {
                 <div>
                   <span className="eyebrow">Selected face</span>
                   <h2>{selectedFace.displayName || "Unidentified"}</h2>
-                  {selectedFace.votes[0] && <AgreementBadge vote={selectedFace.votes[0]} />}
+                  <div className="selected-face-status">
+                    {selectedFace.votes[0] && <AgreementBadge vote={selectedFace.votes[0]} />}
+                    <IssueCount count={selectedFace.feedbackCount} />
+                  </div>
+                  <button
+                    type="button"
+                    className="feedback-trigger"
+                    onClick={() => setFeedbackFace(selectedFace)}
+                  >
+                    <ArchiveIcon type="flag" />
+                    Report issue
+                  </button>
                 </div>
               </div>
+              {feedbackNotice && <p className="feedback-success" role="status">{feedbackNotice}</p>}
               <VotePanel face={selectedFace} />
             </>
           ) : (
@@ -690,6 +1014,7 @@ function ScanDetailPage() {
                     <span>
                       <strong>{face.displayName || "Unidentified"}</strong>
                       <small>Face {index + 1}</small>
+                      <IssueCount count={face.feedbackCount} compact />
                     </span>
                     <AgreementBadge vote={face.votes[0]} compact />
                   </button>
@@ -699,6 +1024,17 @@ function ScanDetailPage() {
           </div>
         </aside>
       </div>
+      {feedbackFace && (
+        <FeedbackDialog
+          face={feedbackFace}
+          onClose={() => setFeedbackFace(null)}
+          onSubmitted={() => {
+            setFeedbackFace(null);
+            setFeedbackNotice("Thank you — your feedback was recorded.");
+            setFeedbackVersion((version) => version + 1);
+          }}
+        />
+      )}
     </section>
   );
 }
@@ -770,6 +1106,7 @@ function PersonDetailPage() {
                   alt={person.data!.name + " in scan " + face.page}
                 />
                 <AgreementBadge vote={vote} compact />
+                <IssueCount count={face.feedbackCount} compact />
               </div>
               <div>
                 <span className="library-tag">{face.library}</span>

@@ -17,7 +17,8 @@ FROM node:${NODE_VERSION} AS runtime
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=8787 \
-    DATASET_DIR=/data
+    DATASET_DIR=/data \
+    FEEDBACK_FILE=/feedback/people_gator__feedback.jsonl
 WORKDIR /app
 
 COPY package.json package-lock.json ./
@@ -28,9 +29,11 @@ COPY --from=build /app/server/index.ts ./server/index.ts
 COPY --from=build /app/server/dataset.ts ./server/dataset.ts
 COPY --from=build /app/src/types.ts ./src/types.ts
 
+RUN mkdir -p /feedback && chown node:node /feedback
+
 USER node
 EXPOSE 8787
-VOLUME ["/data"]
+VOLUME ["/data", "/feedback"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD ["node", "-e", "fetch('http://127.0.0.1:8787/api/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]

@@ -35,12 +35,14 @@ The Vite interface is then available at `http://localhost:5173`. Set `PORT` or
 
 ## Docker
 
-The Compose setup mounts the dataset as a read-only volume at `/data`; it is excluded
-from the image build context. It does not publish a host port. Instead, Traefik routes
+The Compose setup mounts the dataset read-only at `/data` and stores reports in the
+dedicated `people-gator-dataset-feedback` Docker volume at `/feedback`. The dataset
+is excluded from the image build context. Compose does not publish a host port;
+instead, Traefik routes
 `https://peoplegator-dataset.capturemyhand.com` to the container on the external
 `web` network.
 
-The router uses the `websecure` entrypoint and the `tslchallage` certificate
+The router uses the `websecure` entrypoint and the `tlschallenge` certificate
 resolver. The external `web` Docker network and Traefik must already exist.
 
 With the repository's `dataset/` directory:
@@ -55,8 +57,9 @@ With a dataset elsewhere on the host:
 DATASET_PATH=/absolute/path/to/dataset docker compose up --build -d
 ```
 
-You can instead copy `.env.example` to `.env` and set `DATASET_PATH`. Once
-Traefik has discovered the service, open the HTTPS domain above.
+You can instead copy `.env.example` to `.env` and set `DATASET_PATH`. Once Traefik
+has discovered the service, open the HTTPS domain above. The named feedback volume
+survives normal container recreation and `docker compose down`.
 
 ```bash
 docker compose ps
@@ -64,8 +67,18 @@ docker compose logs -f archive
 docker compose down
 ```
 
-The runtime container is read-only, runs as the unprivileged `node` user, and
-includes an HTTP health check at `/api/health`.
+To export the append-only feedback file to the current host directory:
+
+```bash
+docker compose exec -T archive cat /feedback/people_gator__feedback.jsonl \
+  > people_gator__feedback.jsonl
+```
+
+Use `docker compose down -v` only when you intentionally want to delete the stored
+feedback as well.
+
+The runtime container is read-only apart from `/feedback`, runs as the unprivileged
+`node` user, and includes an HTTP health check at `/api/health`.
 
 ## Dataset contract
 
@@ -83,6 +96,22 @@ The index stays in memory; original multi-gigabyte scans are not copied. Page im
 are resized on demand by the server, with 360-pixel card previews kept in a bounded
 memory cache, while aligned crops are streamed directly.
 Search and list endpoints are paginated.
+
+## Feedback data
+
+Feedback never modifies the source annotations. The server appends every report to
+one file, `/feedback/people_gator__feedback.jsonl`, in Docker. Set `FEEDBACK_FILE`
+when running without Docker to override the default
+`./feedback/people_gator__feedback.jsonl` location.
+
+Each line includes a generated ID and timestamp, the issue type, library, document,
+page, crop name, aligned-face path, and the names assigned when the feedback was
+submitted. A wrong-person report also includes `suggested_person_name`; an optional
+`note` can accompany either report type. Example:
+
+```json
+{"feedback_id":"…","created_at":"2026-08-30T08:00:00.000Z","issue_type":"wrong_person","library":"cuni","document":"…","page":"….jpg","crop_name":"…__face_0.jpg","face":"cuni/….peoplegator_aligned_crops/…__face_0.jpg","current_names":["Current name"],"suggested_person_name":"Suggested name"}
+```
 
 ## Agreement semantics
 

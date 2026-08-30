@@ -6,7 +6,7 @@ interface FetchState<T> {
   error: string | null;
 }
 
-export function useApi<T>(url: string): FetchState<T> {
+export function useApi<T>(url: string | null): FetchState<T> {
   const [state, setState] = useState<FetchState<T>>({
     data: null,
     loading: true,
@@ -14,6 +14,10 @@ export function useApi<T>(url: string): FetchState<T> {
   });
 
   useEffect(() => {
+    if (!url) {
+      setState({ data: null, loading: false, error: null });
+      return;
+    }
     const controller = new AbortController();
     setState((current) => ({ ...current, loading: true, error: null }));
 
