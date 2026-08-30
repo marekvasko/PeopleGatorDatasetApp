@@ -14,7 +14,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=web"
-      - "traefik.http.routers.peoplegator-dataset.rule=Host(`peoplegator-dataset.capturemyhand.com`)"
+      - "traefik.http.routers.peoplegator-dataset.rule=Host(`${SUBDOMAIN:-peoplegator-dataset}.${BASE_DOMAIN:-capturemyhand.com}`)"
       - "traefik.http.routers.peoplegator-dataset.entrypoints=websecure"
       - "traefik.http.routers.peoplegator-dataset.tls=true"
       - "traefik.http.routers.peoplegator-dataset.tls.certresolver=tlschallenge"

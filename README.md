@@ -38,43 +38,48 @@ The Vite interface is then available at `http://localhost:5173`. Set `PORT` or
 The Compose setup mounts the dataset read-only at `/data` and stores reports in the
 dedicated `people-gator-dataset-feedback` Docker volume at `/feedback`. The dataset
 is excluded from the image build context. Compose does not publish a host port;
-instead, Traefik routes
-`https://peoplegator-dataset.capturemyhand.com` to the container on the external
-`web` network.
+instead, Traefik routes `https://${SUBDOMAIN}.${BASE_DOMAIN}` to the container on
+the external `web` network. The defaults remain
+`https://peoplegator-dataset.capturemyhand.com`.
 
 The router uses the `websecure` entrypoint and the `tlschallenge` certificate
 resolver. The external `web` Docker network and Traefik must already exist.
 
-With the repository's `dataset/` directory:
+Create the deployment environment first, then use the wrapper to run Compose:
 
 ```bash
-docker compose up --build -d
+cp .env.example .env
+./compose.sh up --build -d
 ```
 
-With a dataset elsewhere on the host:
+Set `BASE_DOMAIN`, `SUBDOMAIN`, and `DATASET_PATH` in `.env`. For example:
 
-```bash
-DATASET_PATH=/absolute/path/to/dataset docker compose up --build -d
+```dotenv
+BASE_DOMAIN=capturemyhand.com
+SUBDOMAIN=peoplegator-dataset
+DATASET_PATH=/absolute/path/to/dataset
 ```
 
-You can instead copy `.env.example` to `.env` and set `DATASET_PATH`. Once Traefik
-has discovered the service, open the HTTPS domain above. The named feedback volume
-survives normal container recreation and `docker compose down`.
+`compose.sh` exports every value from the env file and passes the same file to
+Docker Compose. Set `COMPOSE_ENV_FILE=/absolute/path/to/another.env` to use a file
+other than the repository's `.env`. Once Traefik has discovered the service, open
+the configured HTTPS domain. The named feedback volume survives normal container
+recreation and Compose shutdown.
 
 ```bash
-docker compose ps
-docker compose logs -f archive
-docker compose down
+./compose.sh ps
+./compose.sh logs -f archive
+./compose.sh down
 ```
 
 To export the append-only feedback file to the current host directory:
 
 ```bash
-docker compose exec -T archive cat /feedback/people_gator__feedback.jsonl \
+./compose.sh exec -T archive cat /feedback/people_gator__feedback.jsonl \
   > people_gator__feedback.jsonl
 ```
 
-Use `docker compose down -v` only when you intentionally want to delete the stored
+Use `./compose.sh down -v` only when you intentionally want to delete the stored
 feedback as well.
 
 The runtime container is read-only apart from `/feedback`, runs as the unprivileged
