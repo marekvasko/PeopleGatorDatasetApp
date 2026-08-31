@@ -1120,6 +1120,7 @@ a.scan-navigation-control:hover {
 
 .face-marker {
   position: absolute;
+  z-index: 2;
   min-width: calc(16px * var(--annotation-inverse-scale));
   min-height: calc(16px * var(--annotation-inverse-scale));
   padding: 0;
