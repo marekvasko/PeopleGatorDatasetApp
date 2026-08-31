@@ -50,6 +50,41 @@ describe("annotation consensus", () => {
   });
 });
 
+describe("scan navigation", () => {
+  it("returns ordered neighbours and a different random page", async () => {
+    const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "people-gator-nav-test-"));
+    try {
+      const dataset = path.join(temporaryRoot, "dataset");
+      const images = path.join(dataset, "people_gator__data", "demo", "document.images");
+      await mkdir(images, { recursive: true });
+      await Promise.all(
+        ["001.jpg", "002.jpg", "003.jpg"].map((page) =>
+          writeFile(path.join(images, page), ""),
+        ),
+      );
+      await writeFile(
+        path.join(dataset, "people_gator__corresponding_faces__test.jsonl"),
+        "",
+      );
+
+      const archive = new DatasetIndex(
+        dataset,
+        path.join(temporaryRoot, "feedback", "feedback.jsonl"),
+      );
+      await archive.build();
+
+      const navigation = archive.getScan("demo", "document", "002.jpg")?.navigation;
+      expect(navigation?.previous?.page).toBe("001.jpg");
+      expect(navigation?.next?.page).toBe("003.jpg");
+      expect(["001.jpg", "003.jpg"]).toContain(navigation?.random?.page);
+      expect(archive.getScan("demo", "document", "001.jpg")?.navigation.previous).toBeNull();
+      expect(archive.getScan("demo", "document", "003.jpg")?.navigation.next).toBeNull();
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("feedback persistence", () => {
   it("persists new suggested names and OK responses without changing assigned names", async () => {
     const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "people-gator-test-"));

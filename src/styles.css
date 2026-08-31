@@ -905,6 +905,58 @@ main {
   box-shadow: var(--shadow);
 }
 
+.scan-page-navigation {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  width: 100%;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.scan-navigation-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.42rem;
+  min-height: 36px;
+  padding: 0.45rem 0.72rem;
+  border: 0;
+  color: var(--ink);
+  background: transparent;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-decoration: none;
+  text-transform: uppercase;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.scan-navigation-control + .scan-navigation-control {
+  border-left: 1px solid var(--line);
+}
+
+a.scan-navigation-control:hover {
+  color: white;
+  background: var(--red);
+}
+
+.scan-navigation-control.disabled {
+  color: #aaa59b;
+  background: var(--paper-deep);
+  cursor: default;
+}
+
+.scan-navigation-control .icon {
+  width: 0.84rem;
+  height: 0.84rem;
+}
+
+.scan-navigation-control.previous .icon {
+  transform: rotate(180deg);
+}
+
 .page-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -1038,11 +1090,32 @@ main {
 }
 
 .page-canvas > img {
+  position: relative;
+  z-index: 1;
   width: auto;
   max-width: 100%;
   max-height: calc(100vh - 170px);
   object-fit: contain;
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+}
+
+.page-canvas > .page-scan-image {
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.page-canvas > .page-scan-image.loaded {
+  opacity: 1;
+}
+
+.page-image-skeleton {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  background:
+    linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent),
+    #343a3c;
+  background-size: 200% 100%;
 }
 
 .face-marker {
@@ -1387,19 +1460,103 @@ main {
   font-size: 0.62rem;
 }
 
-.detail-loading {
+.scan-detail-skeleton .detail-topbar {
+  pointer-events: none;
+}
+
+.skeleton-back-link {
+  width: 88px;
+  height: 12px;
+}
+
+.skeleton-detail-meta {
+  width: 155px;
+  height: 28px;
+}
+
+.skeleton-page-stage .skeleton {
+  background:
+    linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent),
+    #3a4042;
+  background-size: 200% 100%;
+}
+
+.skeleton-page-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 0.85rem;
+}
+
+.skeleton-page-toolbar .skeleton:first-child {
+  width: 180px;
+  height: 20px;
+}
+
+.skeleton-page-toolbar .skeleton:last-child {
+  width: 135px;
+  height: 32px;
+}
+
+.skeleton-document {
+  width: min(74%, 720px);
+  height: clamp(480px, 72vh, 900px);
+  margin: 0 auto;
+}
+
+.skeleton-caption {
+  width: 125px;
+  height: 12px;
+  margin-top: 1.1rem;
+}
+
+.skeleton-annotation-drawer {
+  min-height: min(610px, calc(100vh - 120px));
+}
+
+.skeleton-navigation-row {
   display: grid;
-  grid-template-columns: 1fr 360px;
-  gap: 1.5rem;
-  padding: 4rem;
+  grid-template-columns: repeat(3, 1fr);
+  height: 37px;
+  border-bottom: 1px solid var(--line);
 }
 
-.skeleton-page-large {
-  height: 70vh;
+.skeleton-navigation-row .skeleton + .skeleton {
+  border-left: 1px solid var(--line);
 }
 
-.skeleton-panel {
-  height: 60vh;
+.skeleton-selected-face {
+  display: grid;
+  grid-template-columns: 105px minmax(0, 1fr);
+  gap: 1.1rem;
+  padding: 1.25rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.skeleton-face-preview {
+  width: 105px;
+  height: 105px;
+}
+
+.skeleton-selected-face > div {
+  min-width: 0;
+}
+
+.skeleton-selected-face .skeleton-line,
+.skeleton-drawer-section .skeleton-line {
+  margin-right: 0;
+  margin-left: 0;
+}
+
+.skeleton-action {
+  width: 92px;
+  height: 31px;
+  margin-top: 1rem;
+}
+
+.skeleton-drawer-section {
+  padding: 1.25rem;
 }
 
 .person-detail {
@@ -1991,6 +2148,18 @@ footer {
     padding-bottom: calc(68px + env(safe-area-inset-bottom));
   }
 
+  .scan-page-navigation {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+
+  .scan-navigation-control {
+    min-width: 0;
+    min-height: 44px;
+    padding: 0.5rem 0.35rem;
+  }
+
   .site-header {
     position: relative;
     height: 68px;
@@ -2305,13 +2474,13 @@ footer {
     display: none;
   }
 
-  .detail-loading {
-    grid-template-columns: 1fr;
-    padding: 1rem;
+  .skeleton-document {
+    width: min(78%, 560px);
+    height: clamp(390px, 68vh, 680px);
   }
 
-  .skeleton-panel {
-    height: 200px;
+  .skeleton-annotation-drawer {
+    min-height: 360px;
   }
 
   .person-detail {

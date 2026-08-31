@@ -14,6 +14,8 @@ import type {
   PersonDetail,
   PersonSummary,
   ScanDetail,
+  ScanNavigation,
+  ScanNavigationTarget,
   ScanSummary,
   VoteSummary,
 } from "../src/types";
@@ -173,6 +175,7 @@ export class DatasetIndex {
   private faces = new Map<string, MutableFace>();
   private people = new Map<string, MutablePerson>();
   private browsableScans: MutableScan[] = [];
+  private browsableScanPositions = new Map<string, number>();
   private sortedPeople: MutablePerson[] = [];
   private annotationRows = 0;
   private uniqueVotes = 0;
@@ -264,6 +267,9 @@ export class DatasetIndex {
           collator.compare(a.document, b.document) ||
           collator.compare(a.page, b.page),
       );
+    this.browsableScanPositions = new Map(
+      this.browsableScans.map((scan, index) => [scan.id, index]),
+    );
     this.sortedPeople = [...this.people.values()].sort((a, b) =>
       collator.compare(a.name, b.name),
     );
@@ -684,6 +690,36 @@ export class DatasetIndex {
         .map((face) => this.publicFace(face))
         .sort((a, b) => a.pageTop - b.pageTop || a.pageLeft - b.pageLeft),
       sourceUrl: scan.sourceUrl,
+      navigation: this.getScanNavigation(scan),
+    };
+  }
+
+  private getScanNavigation(scan: MutableScan): ScanNavigation {
+    const position = this.browsableScanPositions.get(scan.id);
+    if (position === undefined) {
+      return { previous: null, random: null, next: null };
+    }
+
+    const target = (candidate?: MutableScan): ScanNavigationTarget | null =>
+      candidate
+        ? {
+            library: candidate.library,
+            document: candidate.document,
+            page: candidate.page,
+          }
+        : null;
+    const randomIndex =
+      this.browsableScans.length > 1
+        ? (() => {
+            const candidate = Math.floor(Math.random() * (this.browsableScans.length - 1));
+            return candidate >= position ? candidate + 1 : candidate;
+          })()
+        : -1;
+
+    return {
+      previous: target(this.browsableScans[position - 1]),
+      random: target(this.browsableScans[randomIndex]),
+      next: target(this.browsableScans[position + 1]),
     };
   }
 

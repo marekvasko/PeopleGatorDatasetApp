@@ -30,6 +30,7 @@ import type {
   PersonDetail,
   PersonSummary,
   ScanDetail,
+  ScanNavigationTarget,
   ScanSummary,
   VoteSummary,
 } from "./types";
@@ -43,7 +44,7 @@ function normalizePersonName(value: string): string {
 function ArchiveIcon({
   type,
 }: {
-  type: "scans" | "people" | "search" | "arrow" | "flag" | "thumb";
+  type: "scans" | "people" | "search" | "arrow" | "flag" | "thumb" | "random";
 }) {
   const paths = {
     scans: (
@@ -75,6 +76,14 @@ function ArchiveIcon({
       <>
         <path d="M8 10v11H4V10h4Z" />
         <path d="M8 19h8.2a2 2 0 0 0 1.9-1.4l1.6-5A2 2 0 0 0 17.8 10H14l.7-3.1A3.2 3.2 0 0 0 12 3l-1 4.1L8 11" />
+      </>
+    ),
+    random: (
+      <>
+        <path d="M4 7h3c5 0 5 10 10 10h3" />
+        <path d="m17 14 3 3-3 3" />
+        <path d="M4 17h3c1.8 0 3-.9 4-2M14 9c.8-1.2 1.8-2 3-2h3" />
+        <path d="m17 4 3 3-3 3" />
       </>
     ),
   };
@@ -301,8 +310,7 @@ function ScanBrowse() {
     <>
       <section className="hero">
         <div className="hero-copy">
-          <span className="eyebrow">Digitised history, face by face</span>
-          <h1>Explore the pages.<br />Meet the people.</h1>
+          <h1>Explore PeopleGator Dataset.</h1>
           <p>
             Browse historical scans and discover the people identified in them by
             independent annotators.
@@ -314,7 +322,6 @@ function ScanBrowse() {
       <section className="content-section">
         <div className="section-heading">
           <div>
-            <span className="section-number">01</span>
             <h2>Browse scans</h2>
           </div>
           <p>
@@ -464,6 +471,40 @@ function OkCount({ count, compact = false }: { count: number; compact?: boolean 
       <strong>{count}</strong>
       {!compact && <span>OK</span>}
     </span>
+  );
+}
+
+function ScanNavigationControl({
+  target,
+  kind,
+  label,
+}: {
+  target: ScanNavigationTarget | null;
+  kind: "previous" | "random" | "next";
+  label: string;
+}) {
+  const content = (
+    <>
+      <ArchiveIcon type={kind === "random" ? "random" : "arrow"} />
+      <span>{label}</span>
+    </>
+  );
+
+  if (!target) {
+    return (
+      <span className={"scan-navigation-control " + kind + " disabled"} aria-disabled="true">
+        {content}
+      </span>
+    );
+  }
+
+  return (
+    <Link
+      className={"scan-navigation-control " + kind}
+      to={scanHref(target.library, target.document, target.page)}
+    >
+      {content}
+    </Link>
   );
 }
 
@@ -836,6 +877,46 @@ function FeedbackPanel({
   );
 }
 
+function ScanDetailSkeleton() {
+  return (
+    <section className="scan-detail scan-detail-skeleton" aria-busy="true" aria-label="Loading scan">
+      <div className="detail-topbar">
+        <span className="skeleton skeleton-back-link" />
+        <span className="skeleton skeleton-detail-meta" />
+      </div>
+      <div className="scan-workspace">
+        <div className="page-stage skeleton-page-stage">
+          <div className="skeleton-page-toolbar">
+            <span className="skeleton" />
+            <span className="skeleton" />
+          </div>
+          <span className="skeleton skeleton-document" />
+          <span className="skeleton skeleton-caption" />
+        </div>
+        <aside className="annotation-drawer skeleton-annotation-drawer">
+          <div className="skeleton-navigation-row">
+            <span className="skeleton" />
+            <span className="skeleton" />
+            <span className="skeleton" />
+          </div>
+          <div className="skeleton-selected-face">
+            <span className="skeleton skeleton-face-preview" />
+            <div>
+              <span className="skeleton skeleton-line" />
+              <span className="skeleton skeleton-line short" />
+              <span className="skeleton skeleton-action" />
+            </div>
+          </div>
+          <div className="skeleton-drawer-section">
+            <span className="skeleton skeleton-line" />
+            <span className="skeleton skeleton-line short" />
+          </div>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
 function ScanDetailPage() {
   const route = useParams();
   const [params, setParams] = useSearchParams();
@@ -843,6 +924,7 @@ function ScanDetailPage() {
   const [feedbackFace, setFeedbackFace] = useState<FaceOccurrence | null>(null);
   const [feedbackNotice, setFeedbackNotice] = useState("");
   const [feedbackNoticeIsError, setFeedbackNoticeIsError] = useState(false);
+  const [loadedImagePath, setLoadedImagePath] = useState<string | null>(null);
   const okMutation = useRecordFeedbackMutation();
   const didPanPage = useRef(false);
   const suppressCanvasClickUntil = useRef(0);
@@ -904,14 +986,11 @@ function ScanDetailPage() {
   }
 
   if (scan.loading) {
-    return (
-      <section className="detail-loading">
-        <span className="skeleton skeleton-page-large" />
-        <span className="skeleton skeleton-panel" />
-      </section>
-    );
+    return <ScanDetailSkeleton />;
   }
   if (scan.error || !scan.data) return <ErrorState message={scan.error || "Scan not found"} />;
+  const pageScanImage = pageImage(scan.data.imagePath, 1800);
+  const pageScanImageLoaded = loadedImagePath === scan.data.imagePath;
 
   return (
     <section className="scan-detail">
@@ -1003,12 +1082,21 @@ function ScanDetailPage() {
                       } as React.CSSProperties
                     }
                   >
+                    {!pageScanImageLoaded && (
+                      <span className="page-image-skeleton skeleton" aria-hidden="true" />
+                    )}
                     <img
-                      src={pageImage(scan.data!.imagePath, 1800)}
+                      className={pageScanImageLoaded ? "page-scan-image loaded" : "page-scan-image"}
+                      src={pageScanImage}
                       alt={"Scanned archive page " + scan.data!.page}
+                      width={scan.data!.pageWidth || undefined}
+                      height={scan.data!.pageHeight || undefined}
                       draggable={false}
+                      onLoad={() => setLoadedImagePath(scan.data!.imagePath)}
+                      onError={() => setLoadedImagePath(scan.data!.imagePath)}
                     />
-                    {scan.data!.pageWidth > 0 &&
+                    {pageScanImageLoaded &&
+                      scan.data!.pageWidth > 0 &&
                       scan.data!.pageHeight > 0 &&
                       scan.data!.faces.map((face, index) => {
                         const left = (face.pageLeft / scan.data!.pageWidth) * 100;
@@ -1085,6 +1173,23 @@ function ScanDetailPage() {
         </div>
 
         <aside className="annotation-drawer">
+          <nav className="scan-page-navigation" aria-label="Move between document scans">
+            <ScanNavigationControl
+              target={scan.data.navigation.previous}
+              kind="previous"
+              label="Previous"
+            />
+            <ScanNavigationControl
+              target={scan.data.navigation.random}
+              kind="random"
+              label="Random"
+            />
+            <ScanNavigationControl
+              target={scan.data.navigation.next}
+              kind="next"
+              label="Next"
+            />
+          </nav>
           {selectedFace ? (
             <>
               <div className="selected-face-header">

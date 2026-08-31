@@ -38,11 +38,24 @@ export interface ScanSummary {
   people: string[];
 }
 
+export interface ScanNavigationTarget {
+  library: string;
+  document: string;
+  page: string;
+}
+
+export interface ScanNavigation {
+  previous: ScanNavigationTarget | null;
+  random: ScanNavigationTarget | null;
+  next: ScanNavigationTarget | null;
+}
+
 export interface ScanDetail extends ScanSummary {
   pageWidth: number;
   pageHeight: number;
   faces: FaceOccurrence[];
   sourceUrl: string | null;
+  navigation: ScanNavigation;
 }
 
 export interface PersonSummary {
