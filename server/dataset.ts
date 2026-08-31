@@ -6,6 +6,7 @@ import readline from "node:readline";
 import type {
   ArchiveStats,
   FaceOccurrence,
+  FeedbackPersonSuggestion,
   FeedbackResult,
   FeedbackSubmission,
   LibrarySummary,
@@ -36,6 +37,7 @@ interface MutableFace {
   annotators: Set<string>;
   votesByName: Map<string, Set<string>>;
   feedbackCount: number;
+  okCount: number;
 }
 
 interface MutableScan {
@@ -175,6 +177,8 @@ export class DatasetIndex {
   private annotationRows = 0;
   private uniqueVotes = 0;
   private feedbackReports = 0;
+  private okReports = 0;
+  private feedbackPeople = new Set<string>();
   private feedbackWriteQueue: Promise<void> = Promise.resolve();
 
   constructor(datasetDir: string, feedbackFile: string) {
@@ -327,6 +331,7 @@ export class DatasetIndex {
       annotators: new Set(),
       votesByName: new Map(),
       feedbackCount: 0,
+      okCount: 0,
     };
     this.faces.set(id, created);
     return created;
@@ -397,6 +402,7 @@ export class DatasetIndex {
       displayName: votes[0]?.name ?? null,
       votes,
       feedbackCount: face.feedbackCount,
+      okCount: face.okCount,
     };
   }
 
@@ -416,6 +422,7 @@ export class DatasetIndex {
       faceCount: faces.length,
       namedFaceCount: faces.filter((face) => face.votesByName.size > 0).length,
       feedbackCount: faces.reduce((total, face) => total + face.feedbackCount, 0),
+      okCount: faces.reduce((total, face) => total + face.okCount, 0),
       people,
     };
   }
@@ -439,6 +446,7 @@ export class DatasetIndex {
           : Math.round(percentages.reduce((sum, value) => sum + value, 0) / percentages.length),
       previewFacePath: faces.find((face) => face.facePath)?.facePath ?? null,
       feedbackCount: faces.reduce((total, face) => total + face.feedbackCount, 0),
+      okCount: faces.reduce((total, face) => total + face.okCount, 0),
     };
   }
 
@@ -452,6 +460,7 @@ export class DatasetIndex {
       annotationRows: this.annotationRows,
       uniqueVotes: this.uniqueVotes,
       feedbackReports: this.feedbackReports,
+      okReports: this.okReports,
     };
   }
 
@@ -467,11 +476,20 @@ export class DatasetIndex {
       );
       const face = this.faces.get(id);
       const issueType = text(record.issue_type);
-      if (!face || (issueType !== "wrong_person" && issueType !== "invalid_detection")) {
-        return;
+      if (issueType === "wrong_person") {
+        const suggestedPersonName = text(record.suggested_person_name).trim();
+        if (suggestedPersonName && suggestedPersonName.length <= 200) {
+          this.feedbackPeople.add(suggestedPersonName);
+        }
       }
-      face.feedbackCount += 1;
-      this.feedbackReports += 1;
+      if (!face) return;
+      if (issueType === "ok") {
+        face.okCount += 1;
+        this.okReports += 1;
+      } else if (issueType === "wrong_person" || issueType === "invalid_detection") {
+        face.feedbackCount += 1;
+        this.feedbackReports += 1;
+      }
     });
   }
 
@@ -483,18 +501,30 @@ export class DatasetIndex {
     const face = this.faces.get(faceId(library, document, page, cropName));
     if (!face) throw new FeedbackValidationError("Detection not found", 404);
 
-    if (submission.issueType !== "wrong_person" && submission.issueType !== "invalid_detection") {
+    if (
+      submission.issueType !== "wrong_person" &&
+      submission.issueType !== "invalid_detection" &&
+      submission.issueType !== "ok"
+    ) {
       throw new FeedbackValidationError("Choose a valid feedback type");
     }
 
-    const suggestedPersonName = submission.suggestedPersonName?.trim() ?? "";
+    let suggestedPersonName = submission.suggestedPersonName?.trim() ?? "";
     if (submission.issueType === "wrong_person") {
-      if (!suggestedPersonName || !this.people.has(suggestedPersonName)) {
-        throw new FeedbackValidationError("Choose a person from the archive index");
+      if (!suggestedPersonName) {
+        throw new FeedbackValidationError("Enter or choose a person name");
       }
-      if (face.votesByName.has(suggestedPersonName)) {
+      if (suggestedPersonName.length > 200) {
+        throw new FeedbackValidationError("Person name must be at most 200 characters");
+      }
+      const normalizedSuggestion = normalizeSearch(suggestedPersonName);
+      if ([...face.votesByName.keys()].some((name) => normalizeSearch(name) === normalizedSuggestion)) {
         throw new FeedbackValidationError("Choose a different person name");
       }
+      const knownName = [...this.people.keys(), ...this.feedbackPeople].find(
+        (name) => normalizeSearch(name) === normalizedSuggestion,
+      );
+      suggestedPersonName = knownName ?? suggestedPersonName;
     }
 
     const note = submission.note?.trim() ?? "";
@@ -524,9 +554,68 @@ export class DatasetIndex {
       .then(() => appendFile(this.feedbackFile, JSON.stringify(record) + "\n", "utf8"));
     this.feedbackWriteQueue = write;
     await write;
-    face.feedbackCount += 1;
-    this.feedbackReports += 1;
-    return { feedbackId, feedbackCount: face.feedbackCount };
+    if (submission.issueType === "ok") {
+      face.okCount += 1;
+      this.okReports += 1;
+    } else {
+      face.feedbackCount += 1;
+      this.feedbackReports += 1;
+      if (submission.issueType === "wrong_person") {
+        this.feedbackPeople.add(suggestedPersonName);
+      }
+    }
+    return {
+      feedbackId,
+      feedbackCount: face.feedbackCount,
+      okCount: face.okCount,
+    };
+  }
+
+  getFeedbackPeople(options: {
+    q?: string;
+    page?: number;
+    pageSize?: number;
+  }): Paginated<FeedbackPersonSuggestion> {
+    const query = normalizeSearch(options.q ?? "");
+    const peopleByNormalizedName = new Map<
+      string,
+      { name: string; source: "dataset" | "feedback" }
+    >();
+    for (const name of this.people.keys()) {
+      peopleByNormalizedName.set(normalizeSearch(name), { name, source: "dataset" });
+    }
+    for (const name of this.feedbackPeople) {
+      const normalizedName = normalizeSearch(name);
+      if (!peopleByNormalizedName.has(normalizedName)) {
+        peopleByNormalizedName.set(normalizedName, { name, source: "feedback" });
+      }
+    }
+    const filtered = [...peopleByNormalizedName.values()]
+      .filter((person) => !query || normalizeSearch(person.name).includes(query))
+      .sort((a, b) => {
+        const aName = normalizeSearch(a.name);
+        const bName = normalizeSearch(b.name);
+        const aRank = aName === query ? 0 : aName.startsWith(query) ? 1 : 2;
+        const bRank = bName === query ? 0 : bName.startsWith(query) ? 1 : 2;
+        return aRank - bRank || collator.compare(a.name, b.name);
+      });
+    const paging = pagination(options.page ?? 1, options.pageSize ?? 12, filtered.length);
+    return {
+      items: filtered.slice(paging.start, paging.start + paging.pageSize).map((item) => {
+        const person = this.people.get(item.name);
+        const summary = person ? this.personSummary(person) : null;
+        return {
+          name: item.name,
+          faceCount: summary?.faceCount ?? 0,
+          previewFacePath: summary?.previewFacePath ?? null,
+          source: item.source,
+        };
+      }),
+      page: paging.page,
+      pageSize: paging.pageSize,
+      total: filtered.length,
+      totalPages: paging.totalPages,
+    };
   }
 
   getLibraries(): LibrarySummary[] {

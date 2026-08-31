@@ -115,7 +115,9 @@ when running without Docker to override the default
 Each line includes a generated ID and timestamp, the issue type, library, document,
 page, crop name, aligned-face path, and the names assigned when the feedback was
 submitted. A wrong-person report also includes `suggested_person_name`; an optional
-`note` can accompany either report type. Example:
+`note` can accompany either issue type. Suggested names are indexed for future
+feedback searches but never replace source annotations. A positive response is
+stored in the same file with `"issue_type":"ok"`. Example:
 
 ```json
 {"feedback_id":"…","created_at":"2026-08-30T08:00:00.000Z","issue_type":"wrong_person","library":"cuni","document":"…","page":"….jpg","crop_name":"…__face_0.jpg","face":"cuni/….peoplegator_aligned_crops/…__face_0.jpg","current_names":["Current name"],"suggested_person_name":"Suggested name"}

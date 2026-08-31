@@ -148,6 +148,16 @@ app.get("/api/person", (request, response) => {
   response.json(person);
 });
 
+app.get("/api/feedback/people", (request, response) => {
+  response.json(
+    archive.getFeedbackPeople({
+      q: queryText(request.query.q),
+      page: queryNumber(request.query.page, 1),
+      pageSize: queryNumber(request.query.pageSize, 12),
+    }),
+  );
+});
+
 app.post("/api/feedback", async (request, response) => {
   const body =
     request.body && typeof request.body === "object"

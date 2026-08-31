@@ -51,7 +51,7 @@ describe("annotation consensus", () => {
 });
 
 describe("feedback persistence", () => {
-  it("appends feedback and reloads counts without changing the assigned name", async () => {
+  it("persists new suggested names and OK responses without changing assigned names", async () => {
     const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "people-gator-test-"));
     try {
       const dataset = path.join(temporaryRoot, "dataset");
@@ -85,24 +85,61 @@ describe("feedback persistence", () => {
         document: "document",
         page: "page.jpg",
         cropName: "face-0.jpg",
-        suggestedPersonName: "Other Person",
+        suggestedPersonName: "New Feedback Person",
       });
       expect(result.feedbackCount).toBe(1);
+      expect(result.okCount).toBe(0);
+
+      const okResult = await archive.recordFeedback({
+        issueType: "ok",
+        library: "demo",
+        document: "document",
+        page: "page.jpg",
+        cropName: "face-0.jpg",
+      });
+      expect(okResult.feedbackCount).toBe(1);
+      expect(okResult.okCount).toBe(1);
 
       const reloaded = new DatasetIndex(dataset, feedbackFile);
       await reloaded.build();
       const face = reloaded.getScan("demo", "document", "page.jpg")?.faces[0];
       expect(face?.displayName).toBe("Current Person");
       expect(face?.feedbackCount).toBe(1);
-      const record = JSON.parse((await readFile(feedbackFile, "utf8")).trim());
-      expect(record).toMatchObject({
+      expect(face?.okCount).toBe(1);
+
+      expect(reloaded.getFeedbackPeople({ q: "feedback" }).items).toEqual([
+        {
+          name: "New Feedback Person",
+          faceCount: 0,
+          previewFacePath: null,
+          source: "feedback",
+        },
+      ]);
+      expect(reloaded.getFeedbackPeople({ q: "other" }).items[0]).toMatchObject({
+        name: "Other Person",
+        source: "dataset",
+        faceCount: 1,
+      });
+
+      const records = (await readFile(feedbackFile, "utf8"))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      expect(records[0]).toMatchObject({
         issue_type: "wrong_person",
         library: "demo",
         document: "document",
         page: "page.jpg",
         crop_name: "face-0.jpg",
         current_names: ["Current Person"],
-        suggested_person_name: "Other Person",
+        suggested_person_name: "New Feedback Person",
+      });
+      expect(records[1]).toMatchObject({
+        issue_type: "ok",
+        library: "demo",
+        document: "document",
+        page: "page.jpg",
+        crop_name: "face-0.jpg",
       });
     } finally {
       await rm(temporaryRoot, { recursive: true, force: true });

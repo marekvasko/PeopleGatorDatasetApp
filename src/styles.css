@@ -1488,43 +1488,69 @@ main {
   white-space: nowrap;
 }
 
-.reported-issues {
+.reported-issues,
+.reported-ok {
   display: inline-flex;
   align-items: center;
   gap: 0.28rem;
   width: fit-content;
   padding: 0.28rem 0.42rem;
-  color: #8b2d24;
-  background: #f3d8d3;
   font-size: 0.61rem;
   font-weight: 750;
   line-height: 1;
   white-space: nowrap;
 }
 
-.reported-issues .icon {
+.reported-issues {
+  color: #8b2d24;
+  background: #f3d8d3;
+}
+
+.reported-ok {
+  color: #315d48;
+  background: #dceadf;
+}
+
+.reported-issues .icon,
+.reported-ok .icon {
   width: 0.76rem;
   height: 0.76rem;
 }
 
-.reported-issues.compact {
+.reported-issues.compact,
+.reported-ok.compact {
   padding: 0.28rem 0.36rem;
 }
 
-.scan-card-issues {
+.scan-card-feedback {
   position: absolute;
   bottom: 0.7rem;
   left: 0.7rem;
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 0.25rem;
 }
 
-.person-card .reported-issues {
+.person-card .reported-issues,
+.person-card .reported-ok {
   margin-top: 0.55rem;
 }
 
-.marker-issues {
+.marker-feedback {
   position: absolute;
   top: 0;
   right: 0;
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 0.18rem;
+  transform: scale(var(--annotation-inverse-scale)) translate(50%, -50%);
+  transform-origin: 100% 0;
+}
+
+.marker-issues,
+.marker-ok {
   display: flex;
   align-items: center;
   gap: 0.15rem;
@@ -1533,15 +1559,21 @@ main {
   padding: 0 0.3rem;
   border-radius: 12px;
   color: white;
-  background: #ad3d2f;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
   font-size: 0.58rem;
   font-weight: 900;
-  transform: scale(var(--annotation-inverse-scale)) translate(50%, -50%);
-  transform-origin: 100% 0;
 }
 
-.marker-issues .icon {
+.marker-issues {
+  background: #ad3d2f;
+}
+
+.marker-ok {
+  background: #3f785d;
+}
+
+.marker-issues .icon,
+.marker-ok .icon {
   width: 0.65rem;
   height: 0.65rem;
 }
@@ -1552,14 +1584,19 @@ main {
   gap: 0.42rem;
 }
 
-.feedback-trigger {
+.feedback-triggers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.75rem;
+}
+
+.feedback-trigger,
+.feedback-ok-trigger {
   display: inline-flex;
   align-items: center;
   gap: 0.38rem;
-  margin-top: 0.75rem;
   padding: 0.52rem 0.62rem;
-  border: 1px solid var(--red);
-  color: var(--red-dark);
   background: transparent;
   cursor: pointer;
   font-size: 0.62rem;
@@ -1568,12 +1605,33 @@ main {
   text-transform: uppercase;
 }
 
+.feedback-trigger {
+  border: 1px solid var(--red);
+  color: var(--red-dark);
+}
+
 .feedback-trigger:hover {
   color: white;
   background: var(--red);
 }
 
-.feedback-trigger .icon {
+.feedback-ok-trigger {
+  border: 1px solid #4e8068;
+  color: #315d48;
+}
+
+.feedback-ok-trigger:hover:not(:disabled) {
+  color: white;
+  background: #3f785d;
+}
+
+.feedback-ok-trigger:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.feedback-trigger .icon,
+.feedback-ok-trigger .icon {
   width: 0.8rem;
   height: 0.8rem;
 }
@@ -1587,14 +1645,24 @@ main {
   font-size: 0.7rem;
 }
 
-.face-roster-list .reported-issues {
+.feedback-success.error {
+  color: #812c23;
+  background: #f3d8d3;
+}
+
+.face-roster-list .reported-issues,
+.face-roster-list .reported-ok {
   margin-top: 0.28rem;
 }
 
-.appearance-image > .reported-issues {
+.appearance-feedback {
   position: absolute;
   bottom: 0.6rem;
   left: 0.6rem;
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 0.25rem;
 }
 
 .feedback-backdrop {
@@ -1687,6 +1755,13 @@ main {
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.feedback-context-counts {
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 0.3rem;
 }
 
 .feedback-dialog form {
@@ -1808,6 +1883,24 @@ main {
   width: 42px;
   height: 42px;
   object-fit: cover;
+}
+
+.person-suggestions .new-person-mark {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px dashed #6c8d78;
+  border-radius: 50%;
+  color: #315d48;
+  background: #e6efe7;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.4rem;
+}
+
+.person-suggestions > button.add-person-suggestion {
+  color: #315d48;
+  background: #f3f8f3;
 }
 
 .person-suggestions button > span:last-child {

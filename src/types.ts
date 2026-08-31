@@ -22,6 +22,7 @@ export interface FaceOccurrence {
   displayName: string | null;
   votes: VoteSummary[];
   feedbackCount: number;
+  okCount: number;
 }
 
 export interface ScanSummary {
@@ -33,6 +34,7 @@ export interface ScanSummary {
   faceCount: number;
   namedFaceCount: number;
   feedbackCount: number;
+  okCount: number;
   people: string[];
 }
 
@@ -49,6 +51,7 @@ export interface PersonSummary {
   averageAgreement: number;
   previewFacePath: string | null;
   feedbackCount: number;
+  okCount: number;
 }
 
 export interface PersonDetail extends PersonSummary {
@@ -72,6 +75,7 @@ export interface ArchiveStats {
   annotationRows: number;
   uniqueVotes: number;
   feedbackReports: number;
+  okReports: number;
 }
 
 export interface LibrarySummary {
@@ -80,7 +84,14 @@ export interface LibrarySummary {
   faceCount: number;
 }
 
-export type FeedbackIssueType = "wrong_person" | "invalid_detection";
+export interface FeedbackPersonSuggestion {
+  name: string;
+  faceCount: number;
+  previewFacePath: string | null;
+  source: "dataset" | "feedback";
+}
+
+export type FeedbackIssueType = "wrong_person" | "invalid_detection" | "ok";
 
 export interface FeedbackSubmission {
   issueType: FeedbackIssueType;
@@ -95,4 +106,5 @@ export interface FeedbackSubmission {
 export interface FeedbackResult {
   feedbackId: string;
   feedbackCount: number;
+  okCount: number;
 }
