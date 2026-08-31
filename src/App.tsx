@@ -626,7 +626,6 @@ function FeedbackPanel({
   const [selectedNameSource, setSelectedNameSource] = useState<
     "dataset" | "feedback" | "new" | null
   >(null);
-  const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const feedbackMutation = useRecordFeedbackMutation();
   const submitting = feedbackMutation.isPending;
@@ -670,7 +669,6 @@ function FeedbackPanel({
         issueType,
         options: {
           suggestedPersonName: issueType === "wrong_person" ? selectedName : undefined,
-          note,
         },
       },
       {
@@ -822,17 +820,6 @@ function FeedbackPanel({
               ) : null}
             </div>
           )}
-
-          <label className="feedback-note">
-            <span>Additional detail <small>optional</small></span>
-            <textarea
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              maxLength={1000}
-              rows={3}
-              placeholder="Tell us anything else that would help…"
-            />
-          </label>
 
           {error && <p className="feedback-error" role="alert">{error}</p>}
           <div className="feedback-actions">

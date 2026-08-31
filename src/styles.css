@@ -1726,8 +1726,7 @@ main {
 }
 
 .feedback-type-options legend,
-.feedback-person-label,
-.feedback-note > span {
+.feedback-person-label {
   grid-column: 1 / -1;
   margin-bottom: 0.2rem;
   font-size: 0.64rem;
@@ -1905,35 +1904,6 @@ main {
   font-size: 0.64rem;
   font-weight: 800;
   text-transform: uppercase;
-}
-
-.feedback-note {
-  display: flex;
-  margin-top: 1.2rem;
-  flex-direction: column;
-}
-
-.feedback-note > span small {
-  color: var(--muted);
-  font-weight: 500;
-  text-transform: none;
-}
-
-.feedback-note textarea {
-  margin-top: 0.5rem;
-  padding: 0.75rem;
-  resize: vertical;
-  border: 1px solid var(--line);
-  outline: 0;
-  background: white;
-  font: inherit;
-  font-size: 0.76rem;
-  line-height: 1.5;
-}
-
-.feedback-note textarea:focus {
-  border-color: var(--red);
-  box-shadow: 0 0 0 3px rgba(173, 61, 47, 0.1);
 }
 
 .feedback-error {
