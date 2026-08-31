@@ -21,5 +21,10 @@ set -a
 . "$ENV_FILE"
 set +a
 
+if [ -z "${ARCHIVE_UID:-}" ] && docker info --format '{{json .SecurityOptions}}' | grep -q 'name=rootless'; then
+  ARCHIVE_UID=0
+  ARCHIVE_GID=0
+  export ARCHIVE_UID ARCHIVE_GID
+fi
 
 exec docker compose --env-file "$ENV_FILE" -f "$SCRIPT_DIR/compose.yaml" "$@"

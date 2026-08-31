@@ -6,19 +6,20 @@ services:
       dockerfile: Dockerfile
     image: people-gator-archive:local
     init: true
+    user: "${ARCHIVE_UID:-1000}:${ARCHIVE_GID:-1000}"
     read_only: true
     security_opt:
       - no-new-privileges:true
     expose:
       - "8787"
     labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=web"
-      - "traefik.http.routers.peoplegator-dataset.rule=Host(`${SUBDOMAIN:-peoplegator-dataset}.${BASE_DOMAIN:-capturemyhand.com}`)"
-      - "traefik.http.routers.peoplegator-dataset.entrypoints=websecure"
-      - "traefik.http.routers.peoplegator-dataset.tls=true"
-      - "traefik.http.routers.peoplegator-dataset.tls.certresolver=tlschallenge"
-      - "traefik.http.services.peoplegator-dataset.loadbalancer.server.port=8787"
+      traefik.enable: true
+      traefik.docker.network: web
+      traefik.http.routers.peoplegator-dataset.rule: Host(`${SUBDOMAIN:-peoplegator-dataset}.${BASE_DOMAIN:-capturemyhand.com}`)
+      traefik.http.routers.peoplegator-dataset.entrypoints: websecure
+      traefik.http.routers.peoplegator-dataset.tls: true
+      traefik.http.routers.peoplegator-dataset.tls.certresolver: tlschallenge
+      traefik.http.services.peoplegator-dataset.loadbalancer.server.port: 8787
     environment:
       HOST: 0.0.0.0
       PORT: 8787
