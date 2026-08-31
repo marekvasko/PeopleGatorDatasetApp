@@ -21,4 +21,5 @@ set -a
 . "$ENV_FILE"
 set +a
 
+
 exec docker compose --env-file "$ENV_FILE" -f "$SCRIPT_DIR/compose.yaml" "$@"

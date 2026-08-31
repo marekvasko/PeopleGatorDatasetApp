@@ -35,8 +35,10 @@ The Vite interface is then available at `http://localhost:5173`. Set `PORT` or
 
 ## Docker
 
-The Compose setup mounts the dataset read-only at `/data` and stores reports in the
-dedicated `people-gator-dataset-feedback` Docker volume at `/feedback`. The dataset
+The Compose setup mounts the dataset read-only at `/data`. By default, it stores
+reports in the dedicated `people-gator-dataset-feedback` Docker volume at
+`/feedback`; setting `FEEDBACK_DIR` instead binds that host directory at the same
+location. The dataset
 is excluded from the image build context. Compose does not publish a host port;
 instead, Traefik routes `https://${SUBDOMAIN}.${BASE_DOMAIN}` to the container on
 the external `web` network. The defaults remain
@@ -52,19 +54,23 @@ cp .env.example .env
 ./compose.sh up --build -d
 ```
 
-Set `BASE_DOMAIN`, `SUBDOMAIN`, and `DATASET_PATH` in `.env`. For example:
+Set `BASE_DOMAIN`, `SUBDOMAIN`, `DATASET_PATH`, and optionally `FEEDBACK_DIR`
+in `.env`. For example:
 
 ```dotenv
 BASE_DOMAIN=capturemyhand.com
 SUBDOMAIN=peoplegator-dataset
 DATASET_PATH=/absolute/path/to/dataset
+FEEDBACK_DIR=/absolute/path/to/feedback
 ```
 
 `compose.sh` exports every value from the env file and passes the same file to
 Docker Compose. Set `COMPOSE_ENV_FILE=/absolute/path/to/another.env` to use a file
 other than the repository's `.env`. Once Traefik has discovered the service, open
 the configured HTTPS domain. The named feedback volume survives normal container
-recreation and Compose shutdown.
+recreation and Compose shutdown. When `FEEDBACK_DIR` is set, that directory must
+already exist and be writable by the container's `node` user (UID 1000); reports
+are then directly available on the host.
 
 ```bash
 ./compose.sh ps
@@ -105,7 +111,8 @@ Search and list endpoints are paginated.
 ## Feedback data
 
 Feedback never modifies the source annotations. The server appends every report to
-one file, `/feedback/people_gator__feedback.jsonl`, in Docker. Set `FEEDBACK_FILE`
+one file, `/feedback/people_gator__feedback.jsonl`, in Docker and under
+`FEEDBACK_DIR` when a host directory is configured. Set `FEEDBACK_FILE`
 when running without Docker to override the default
 `./feedback/people_gator__feedback.jsonl` location.
 

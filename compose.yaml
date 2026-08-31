@@ -1,11 +1,11 @@
 services:
   archive:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: Dockerfile
     image: people-gator-archive:local
     init: true
-    restart: unless-stopped
     read_only: true
     security_opt:
       - no-new-privileges:true
@@ -29,8 +29,8 @@ services:
         source: ${DATASET_PATH:-./dataset}
         target: /data
         read_only: true
-      - type: volume
-        source: feedback
+      - type: bind
+        source: ${FEEDBACK_PATH:-./feedback}
         target: /feedback
     tmpfs:
       - /tmp:size=64m,mode=1777
@@ -41,7 +41,3 @@ networks:
   web:
     external: true
     name: web
-
-volumes:
-  feedback:
-    name: people-gator-dataset-feedback
