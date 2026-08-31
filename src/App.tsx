@@ -11,7 +11,14 @@ import {
 } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
-import { faceImage, pageImage, queryString, scanHref, useApi } from "./api";
+import {
+  faceImage,
+  pageImage,
+  queryString,
+  scanHref,
+  useApi,
+  useRecordFeedbackMutation,
+} from "./api";
 import type {
   ArchiveStats,
   FaceOccurrence,
@@ -268,7 +275,7 @@ function ScanBrowse() {
   const scansUrl =
     "/api/scans" +
     queryString({ q: params.get("q") ?? "", library, faces, page, pageSize: 24 });
-  const scans = useApi<Paginated<ScanSummary>>(scansUrl);
+  const scans = useApi<Paginated<ScanSummary>>(scansUrl, { keepPreviousData: true });
   const stats = useApi<ArchiveStats>("/api/stats");
   const libraries = useApi<LibrarySummary[]>("/api/libraries");
 
@@ -460,33 +467,6 @@ function OkCount({ count, compact = false }: { count: number; compact?: boolean 
   );
 }
 
-async function recordFaceFeedback(
-  face: FaceOccurrence,
-  issueType: FeedbackIssueType,
-  options: { suggestedPersonName?: string; note?: string } = {},
-): Promise<FeedbackResult> {
-  const response = await fetch("/api/feedback", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      issueType,
-      library: face.library,
-      document: face.document,
-      page: face.page,
-      cropName: face.cropName,
-      ...options,
-    }),
-  });
-  const body = (await response.json().catch(() => null)) as
-    | FeedbackResult
-    | { error?: string }
-    | null;
-  if (!response.ok) {
-    throw new Error(body && "error" in body ? body.error : "Could not save feedback");
-  }
-  return body as FeedbackResult;
-}
-
 function PeopleBrowse() {
   const [params, setParams] = useSearchParams();
   const [query, setQuery] = useState(params.get("q") ?? "");
@@ -503,6 +483,7 @@ function PeopleBrowse() {
 
   const people = useApi<Paginated<PersonSummary>>(
     "/api/people" + queryString({ q: params.get("q") ?? "", page, pageSize: 30 }),
+    { keepPreviousData: true },
   );
 
   function goToPage(nextPage: number) {
@@ -630,7 +611,7 @@ function VotePanel({ face }: { face: FaceOccurrence }) {
   );
 }
 
-function FeedbackDialog({
+function FeedbackPanel({
   face,
   onClose,
   onSubmitted,
@@ -646,8 +627,9 @@ function FeedbackDialog({
     "dataset" | "feedback" | "new" | null
   >(null);
   const [note, setNote] = useState("");
-  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const feedbackMutation = useRecordFeedbackMutation();
+  const submitting = feedbackMutation.isPending;
   const debouncedQuery = useDebounced(query.trim(), 220);
   const currentNames = useMemo(
     () => new Set(face.votes.map((vote) => normalizePersonName(vote.name))),
@@ -675,74 +657,40 @@ function FeedbackDialog({
     !queryMatchesCurrentName &&
     !hasExactSuggestion;
 
-  useEffect(() => {
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !submitting) onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [onClose, submitting]);
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     if (issueType === "wrong_person" && !selectedName) {
       setError("Search for and select the person who should be shown here.");
       return;
     }
-    setSubmitting(true);
-    try {
-      const result = await recordFaceFeedback(face, issueType, {
-        suggestedPersonName: issueType === "wrong_person" ? selectedName : undefined,
-        note,
-      });
-      onSubmitted(result);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not save feedback");
-      setSubmitting(false);
-    }
+    feedbackMutation.mutate(
+      {
+        face,
+        issueType,
+        options: {
+          suggestedPersonName: issueType === "wrong_person" ? selectedName : undefined,
+          note,
+        },
+      },
+      {
+        onSuccess: onSubmitted,
+        onError: (caught) => setError(caught.message || "Could not save feedback"),
+      },
+    );
   }
 
   return (
-    <div className="feedback-backdrop" onClick={submitting ? undefined : onClose}>
-      <section
-        className="feedback-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="feedback-title"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <header className="feedback-dialog-header">
-          <div>
-            <span className="eyebrow">Help improve this archive</span>
-            <h2 id="feedback-title">Record feedback</h2>
-          </div>
-          <button type="button" onClick={onClose} disabled={submitting} aria-label="Close feedback dialog">
-            ×
-          </button>
-        </header>
-
-        <div className="feedback-face-context">
-          <ImageWithFallback
-            src={faceImage(face.facePath)}
-            alt={face.displayName || "Selected detection"}
-          />
-          <div>
-            <span>Feedback for</span>
-            <strong>{face.displayName || "Unnamed detection"}</strong>
-            <small>{face.library.toUpperCase()} · {face.page}</small>
-          </div>
-          <span className="feedback-context-counts">
-            <IssueCount count={face.feedbackCount} />
-            <OkCount count={face.okCount} />
-          </span>
+    <section className="feedback-panel" aria-labelledby="feedback-title">
+      <header className="feedback-panel-header">
+        <div>
+          <span className="eyebrow">Help improve this archive</span>
+          <h3 id="feedback-title">Report an issue</h3>
         </div>
-
+        <button type="button" onClick={onClose} disabled={submitting} aria-label="Close feedback form">
+          ×
+        </button>
+      </header>
         <form onSubmit={submit}>
           <fieldset className="feedback-type-options">
             <legend>What is wrong?</legend>
@@ -897,8 +845,7 @@ function FeedbackDialog({
             </button>
           </div>
         </form>
-      </section>
-    </div>
+    </section>
   );
 }
 
@@ -906,12 +853,10 @@ function ScanDetailPage() {
   const route = useParams();
   const [params, setParams] = useSearchParams();
   const [pageScale, setPageScale] = useState(1);
-  const [feedbackVersion, setFeedbackVersion] = useState(0);
   const [feedbackFace, setFeedbackFace] = useState<FaceOccurrence | null>(null);
   const [feedbackNotice, setFeedbackNotice] = useState("");
   const [feedbackNoticeIsError, setFeedbackNoticeIsError] = useState(false);
-  const [okSubmitting, setOkSubmitting] = useState(false);
-  const [okCountOverrides, setOkCountOverrides] = useState<Record<string, number>>({});
+  const okMutation = useRecordFeedbackMutation();
   const didPanPage = useRef(false);
   const suppressCanvasClickUntil = useRef(0);
   const url =
@@ -920,18 +865,10 @@ function ScanDetailPage() {
     "/" +
     encodeURIComponent(route.document ?? "") +
     "/" +
-    encodeURIComponent(route.page ?? "") +
-    queryString({ feedbackVersion });
+    encodeURIComponent(route.page ?? "");
   const scan = useApi<ScanDetail>(url);
   const selectedCrop = params.get("face");
-  const selectedFaceFromScan =
-    scan.data?.faces.find((face) => face.cropName === selectedCrop) ?? null;
-  const selectedFace = selectedFaceFromScan
-    ? {
-        ...selectedFaceFromScan,
-        okCount: okCountOverrides[selectedFaceFromScan.id] ?? selectedFaceFromScan.okCount,
-      }
-    : null;
+  const selectedFace = scan.data?.faces.find((face) => face.cropName === selectedCrop) ?? null;
 
   const clearSelectedFace = useCallback(() => {
     if (!params.has("face")) return;
@@ -956,37 +893,27 @@ function ScanDetailPage() {
     const next = new URLSearchParams(params);
     next.set("face", face.cropName);
     setParams(next, { replace: true });
+    setFeedbackFace(null);
     setFeedbackNotice("");
     setFeedbackNoticeIsError(false);
   }
 
-  async function markSelectedFaceOk() {
-    if (!selectedFace || okSubmitting) return;
-    const faceId = selectedFace.id;
-    const previousOverride = okCountOverrides[faceId];
-    const optimisticCount = selectedFace.okCount + 1;
-    setOkSubmitting(true);
+  function markSelectedFaceOk() {
+    if (!selectedFace || okMutation.isPending) return;
     setFeedbackNotice("");
-    setOkCountOverrides((current) => ({ ...current, [faceId]: optimisticCount }));
-    try {
-      const result = await recordFaceFeedback(selectedFace, "ok");
-      setOkCountOverrides((current) => ({ ...current, [faceId]: result.okCount }));
-      setFeedbackNotice("Thank you — this detection was marked as OK.");
-      setFeedbackNoticeIsError(false);
-    } catch (caught) {
-      setOkCountOverrides((current) => {
-        const next = { ...current };
-        if (previousOverride === undefined) delete next[faceId];
-        else next[faceId] = previousOverride;
-        return next;
-      });
-      setFeedbackNotice(
-        caught instanceof Error ? caught.message : "Could not record the OK response.",
-      );
-      setFeedbackNoticeIsError(true);
-    } finally {
-      setOkSubmitting(false);
-    }
+    okMutation.mutate(
+      { face: selectedFace, issueType: "ok" },
+      {
+        onSuccess: () => {
+          setFeedbackNotice("Thank you — this detection was marked as OK.");
+          setFeedbackNoticeIsError(false);
+        },
+        onError: (caught) => {
+          setFeedbackNotice(caught.message || "Could not record the OK response.");
+          setFeedbackNoticeIsError(true);
+        },
+      },
+    );
   }
 
   if (scan.loading) {
@@ -1097,7 +1024,6 @@ function ScanDetailPage() {
                     {scan.data!.pageWidth > 0 &&
                       scan.data!.pageHeight > 0 &&
                       scan.data!.faces.map((face, index) => {
-                        const visibleOkCount = okCountOverrides[face.id] ?? face.okCount;
                         const left = (face.pageLeft / scan.data!.pageWidth) * 100;
                         const top = (face.pageTop / scan.data!.pageHeight) * 100;
                         const width = (face.width / scan.data!.pageWidth) * 100;
@@ -1129,7 +1055,7 @@ function ScanDetailPage() {
                             key={face.id}
                           >
                             <span className="marker-number">{index + 1}</span>
-                            {(face.feedbackCount > 0 || visibleOkCount > 0) && (
+                            {(face.feedbackCount > 0 || face.okCount > 0) && (
                               <span className="marker-feedback">
                                 {face.feedbackCount > 0 && (
                                   <span className="marker-issues">
@@ -1137,10 +1063,10 @@ function ScanDetailPage() {
                                     {face.feedbackCount}
                                   </span>
                                 )}
-                                {visibleOkCount > 0 && (
+                                {face.okCount > 0 && (
                                   <span className="marker-ok">
                                     <ArchiveIcon type="thumb" />
-                                    {visibleOkCount}
+                                    {face.okCount}
                                   </span>
                                 )}
                               </span>
@@ -1191,7 +1117,12 @@ function ScanDetailPage() {
                     <button
                       type="button"
                       className="feedback-trigger"
-                      onClick={() => setFeedbackFace(selectedFace)}
+                      aria-expanded={feedbackFace?.id === selectedFace.id}
+                      onClick={() =>
+                        setFeedbackFace((current) =>
+                          current?.id === selectedFace.id ? null : selectedFace,
+                        )
+                      }
                     >
                       <ArchiveIcon type="flag" />
                       Report issue
@@ -1200,14 +1131,25 @@ function ScanDetailPage() {
                       type="button"
                       className="feedback-ok-trigger"
                       onClick={markSelectedFaceOk}
-                      disabled={okSubmitting}
+                      disabled={okMutation.isPending}
                     >
                       <ArchiveIcon type="thumb" />
-                      {okSubmitting ? "Saving…" : "Looks OK"}
+                      {okMutation.isPending ? "Saving…" : "Looks OK"}
                     </button>
                   </div>
                 </div>
               </div>
+              {feedbackFace?.id === selectedFace.id && (
+                <FeedbackPanel
+                  face={selectedFace}
+                  onClose={() => setFeedbackFace(null)}
+                  onSubmitted={() => {
+                    setFeedbackFace(null);
+                    setFeedbackNotice("Thank you — your feedback was recorded.");
+                    setFeedbackNoticeIsError(false);
+                  }}
+                />
+              )}
               {feedbackNotice && (
                 <p
                   className={"feedback-success " + (feedbackNoticeIsError ? "error" : "")}
@@ -1249,8 +1191,10 @@ function ScanDetailPage() {
                     <span>
                       <strong>{face.displayName || "Unidentified"}</strong>
                       <small>Face {index + 1}</small>
-                      <IssueCount count={face.feedbackCount} compact />
-                      <OkCount count={okCountOverrides[face.id] ?? face.okCount} compact />
+                      <span className="face-roster-feedback">
+                        <IssueCount count={face.feedbackCount} compact />
+                        <OkCount count={face.okCount} compact />
+                      </span>
                     </span>
                     <AgreementBadge vote={face.votes[0]} compact />
                   </button>
@@ -1260,18 +1204,6 @@ function ScanDetailPage() {
           </div>
         </aside>
       </div>
-      {feedbackFace && (
-        <FeedbackDialog
-          face={feedbackFace}
-          onClose={() => setFeedbackFace(null)}
-          onSubmitted={() => {
-            setFeedbackFace(null);
-            setFeedbackNotice("Thank you — your feedback was recorded.");
-            setFeedbackNoticeIsError(false);
-            setFeedbackVersion((version) => version + 1);
-          }}
-        />
-      )}
     </section>
   );
 }
@@ -1289,6 +1221,7 @@ function PersonDetailPage() {
   const page = Number(params.get("page") ?? 1);
   const person = useApi<PersonResponse>(
     "/api/person" + queryString({ name, page, pageSize: 36 }),
+    { keepPreviousData: true },
   );
 
   function goToPage(nextPage: number) {
