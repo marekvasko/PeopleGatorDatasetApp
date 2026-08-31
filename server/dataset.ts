@@ -33,7 +33,6 @@ interface MutableFace {
   width: number;
   height: number;
   confidence: number | null;
-  sourceUrl: string | null;
   annotators: Set<string>;
   votesByName: Map<string, Set<string>>;
   feedbackCount: number;
@@ -74,6 +73,20 @@ function scanId(library: string, document: string, page: string): string {
 
 function faceId(library: string, document: string, page: string, crop: string): string {
   return [library, document, page, crop].join("\u0000");
+}
+
+export function buildSourceUrl(library: string, document: string, page: string): string {
+  const librarySlug = encodeURIComponent(library.trim().toLowerCase());
+  const documentUuid = document.trim().replace(/^uuid:/i, "");
+  const pageUuid = path.parse(page.trim()).name.replace(/^uuid:/i, "");
+  return (
+    "https://www.digitalniknihovna.cz/" +
+    librarySlug +
+    "/view/uuid:" +
+    encodeURIComponent(documentUuid) +
+    "?page=uuid:" +
+    encodeURIComponent(pageUuid)
+  );
 }
 
 export function normalizeSearch(value: string): string {
@@ -205,7 +218,7 @@ export class DatasetIndex {
             hasImage: true,
             pageWidth: 0,
             pageHeight: 0,
-            sourceUrl: null,
+            sourceUrl: buildSourceUrl(library, document, image.name),
             faceIds: new Set(),
           });
         }
@@ -266,7 +279,7 @@ export class DatasetIndex {
       hasImage: false,
       pageWidth: 0,
       pageHeight: 0,
-      sourceUrl: null,
+      sourceUrl: buildSourceUrl(library, document, page),
       faceIds: new Set(),
     };
     this.scans.set(id, created);
@@ -289,7 +302,6 @@ export class DatasetIndex {
       existing.pageTop ||= number(record.page_top);
       existing.width ||= number(record.width);
       existing.height ||= number(record.height);
-      existing.sourceUrl ||= text(record.url) || null;
       return existing;
     }
 
@@ -312,7 +324,6 @@ export class DatasetIndex {
         typeof record.confidence === "number" && Number.isFinite(record.confidence)
           ? record.confidence
           : null,
-      sourceUrl: text(record.url) || null,
       annotators: new Set(),
       votesByName: new Map(),
       feedbackCount: 0,
@@ -328,7 +339,6 @@ export class DatasetIndex {
     scan.faceIds.add(face.id);
     scan.pageWidth ||= face.pageWidth;
     scan.pageHeight ||= face.pageHeight;
-    scan.sourceUrl ||= face.sourceUrl;
   }
 
   private addAnnotation(record: JsonRecord): void {
@@ -339,7 +349,6 @@ export class DatasetIndex {
     scan.faceIds.add(face.id);
     scan.pageWidth ||= face.pageWidth;
     scan.pageHeight ||= face.pageHeight;
-    scan.sourceUrl ||= face.sourceUrl;
 
     const annotator = text(record.annotator).trim();
     const name = text(record.person_name).trim();

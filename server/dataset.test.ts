@@ -2,7 +2,21 @@ import { describe, expect, it } from "vitest";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DatasetIndex, normalizeSearch, summarizeVotes } from "./dataset";
+import { buildSourceUrl, DatasetIndex, normalizeSearch, summarizeVotes } from "./dataset";
+
+describe("source links", () => {
+  it("builds Digitalniknihovna links from library, document, and page metadata", () => {
+    expect(
+      buildSourceUrl(
+        "mzk",
+        "c83ccd83-c8c2-4f86-af83-44e509025f50",
+        "84b4ddac-0ce1-4b3a-bd7d-dee3c3869a50.jpg",
+      ),
+    ).toBe(
+      "https://www.digitalniknihovna.cz/mzk/view/uuid:c83ccd83-c8c2-4f86-af83-44e509025f50?page=uuid:84b4ddac-0ce1-4b3a-bd7d-dee3c3869a50",
+    );
+  });
+});
 
 describe("annotation consensus", () => {
   it("deduplicates repeated rows from the same annotator", () => {
