@@ -30,6 +30,20 @@ For live frontend and server development:
 DATASET_DIR=./dataset npm run dev
 ```
 
+## Frontend structure
+
+The frontend is organized by responsibility:
+
+- `src/App.tsx` contains only the route composition;
+- `src/features/` owns scan, people, and feedback workflows;
+- `src/components/` contains reusable layout and archive UI components;
+- `src/hooks/` contains cross-feature state and URL synchronization hooks;
+- `src/api.ts` owns server communication and React Query cache updates;
+- `src/types.ts` defines the shared API data contract.
+
+Feature-specific components and hooks stay inside their feature directory so that
+shared modules do not depend on page-level behavior.
+
 The Vite interface is then available at `http://localhost:5173`. Set `PORT` or
 `HOST` to override the production server defaults (`8787` and `0.0.0.0`).
 
