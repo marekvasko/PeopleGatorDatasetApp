@@ -7,3 +7,5 @@ dist/
 .env
 *.zip
 !feedback/.gitkeep
+vue-fronted/
+vue-frontend/
